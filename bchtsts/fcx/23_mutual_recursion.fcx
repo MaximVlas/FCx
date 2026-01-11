@@ -1,0 +1,37 @@
+// Benchmark: Mutual recursion
+// Tests: Indirect function calls
+
+fn is_even(n) -> i64 {
+    if n == 0 {
+        ret 1
+    }
+    ret is_odd(n - 1)
+}
+
+fn is_odd(n) -> i64 {
+    if n == 0 {
+        ret 0
+    }
+    ret is_even(n - 1)
+}
+
+fn main() -> i64 {
+    let iterations := 100000
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        // Use varying input to prevent constant folding
+        // i % 20 + 40 gives values 40-59
+        let div := i / 20
+        let n := i - div * 20 + 40
+        sum := sum + is_even(n)
+        sum := sum + is_odd(n + 1)
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 0
+}

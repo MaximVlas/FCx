@@ -1,0 +1,24 @@
+// Benchmark: Integer arithmetic operations
+// Tests: Add, sub, mul, div performance
+
+fn main() -> i64 {
+    let iterations := 10000000
+    let a := 12345
+    let b := 67
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        let r1 := a + b
+        let r2 := a - b
+        let r3 := a * b
+        let r4 := a / b
+        sum := sum + r1 + r2 + r3 + r4
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

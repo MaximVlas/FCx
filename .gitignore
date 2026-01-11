@@ -1,0 +1,36 @@
+# Build artifacts
+bin/
+obj/
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+
+# Temporary files
+/tmp/
+*.tmp
+*.temp
+
+# Debug files
+debugs/debug_*
+!debugs/*.c
+
+# Test results
+bchtsts/results/
+bchtsts/bin/
+
+# IDE files
+.vscode/settings.json
+.vscode/launch.json
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# LLVM IR files
+*.ll
+*.bc

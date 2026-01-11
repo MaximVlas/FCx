@@ -1,0 +1,32 @@
+// Benchmark: Factorial computation
+// Tests: Multiplication chains, loop performance
+
+fn factorial(n) -> i64 {
+    let result := 1
+    let i := 2
+    while i <= n {
+        result := result * i
+        i := i + 1
+    }
+    ret result
+}
+
+fn main() -> i64 {
+    let iterations := 10000000
+    let sum := 0
+    let i := 0
+    
+    // Use varying input to prevent constant folding
+    // Manual modulo: i % 12 = i - (i/12)*12
+    while i < iterations {
+        let div := i / 12
+        let n := i - div * 12 + 1
+        sum := sum + factorial(n)
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

@@ -1,0 +1,18 @@
+// Benchmark: Simple loop summation
+// Tests: Loop overhead, increment operations
+
+fn main() -> i64 {
+    let iterations := 100000000
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        sum := sum + i
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

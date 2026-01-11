@@ -1,0 +1,28 @@
+// Test: Function calls and return values
+fn add(a, b) -> i64 {
+    ret a + b
+}
+
+fn multiply(a, b) -> i64 {
+    ret a * b
+}
+
+fn factorial(n) -> i64 {
+    if n <= 1 {
+        ret 1
+    }
+    ret n * factorial(n - 1)
+}
+
+fn main() -> i64 {
+    let sum := add(3, 4)
+    print>sum  // 7
+    
+    let prod := multiply(5, 6)
+    print>prod  // 30
+    
+    let fact5 := factorial(5)
+    print>fact5  // 120
+    
+    ret 0
+}

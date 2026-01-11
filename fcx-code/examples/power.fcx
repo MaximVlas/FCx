@@ -1,0 +1,28 @@
+fn power(base, exp) -> i64 {
+    if exp == 0 {
+        ret 1
+    }
+    
+    let result := 1
+    while exp > 0 {
+        if (exp & 1) == 1 {
+            result := result * base
+        }
+        base := base * base
+        exp := exp >> 1
+    }
+    ret result
+}
+
+fn main() -> i64 {
+    let p1 := power(2, 10)
+    print>p1  // 1024
+    
+    let p2 := power(3, 5)
+    print>p2  // 243
+    
+    let p3 := power(5, 3)
+    print>p3  // 125
+    
+    ret 0
+}

@@ -1,0 +1,9 @@
+// Test that parameters are preserved
+fn add(a, b) {
+    ret a + b;
+}
+
+fn main() {
+    let x = add(10, 20);
+    ret x;
+}

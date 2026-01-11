@@ -1,0 +1,29 @@
+// Benchmark: Bit reversal
+// Tests: Shift and OR operations
+
+fn reverse_bits(n) -> i64 {
+    let result := 0
+    let bits := 32
+    let i := 0
+    while i < bits {
+        result := result * 2 + (n & 1)
+        n := n / 2
+        i := i + 1
+    }
+    ret result
+}
+
+fn main() -> i64 {
+    let iterations := 2000000
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        // Use XOR to prevent overflow while still doing work
+        sum := sum ^ reverse_bits(i)
+        i := i + 1
+    }
+    
+    // XOR result can be 0, so just return 0 (success)
+    ret 0
+}

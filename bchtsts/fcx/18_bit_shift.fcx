@@ -1,0 +1,23 @@
+// Benchmark: Bit shift operations
+// Tests: Left and right shift performance
+
+fn main() -> i64 {
+    let iterations := 10000000
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        let a := i
+        let b := a * 2      // Left shift by 1
+        let c := b * 4      // Left shift by 2
+        let d := c / 2      // Right shift by 1
+        let e := d / 8      // Right shift by 3
+        sum := sum + e
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

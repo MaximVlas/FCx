@@ -1,0 +1,36 @@
+// Benchmark: Matrix multiplication (simulated with nested loops)
+// Tests: Triple nested loop, multiplication
+
+fn main() -> i64 {
+    let n := 50
+    let iterations := 10
+    let total := 0
+    let iter := 0
+    
+    while iter < iterations {
+        let sum := 0
+        let i := 0
+        while i < n {
+            let j := 0
+            while j < n {
+                let k := 0
+                let cell := 0
+                while k < n {
+                    // Simulate A[i][k] * B[k][j]
+                    cell := cell + (i + k) * (k + j)
+                    k := k + 1
+                }
+                sum := sum + cell
+                j := j + 1
+            }
+            i := i + 1
+        }
+        total := total + sum
+        iter := iter + 1
+    }
+    
+    if total > 0 {
+        ret 0
+    }
+    ret 1
+}

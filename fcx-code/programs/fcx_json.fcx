@@ -1,0 +1,264 @@
+// FCx JSON Parser Library
+// A minimal JSON parser that can be called from C
+// Uses pointer arithmetic since array indexing isn't supported yet
+
+// ============================================================================
+// Character Classification
+// ============================================================================
+
+fn fcx_is_whitespace(c) -> i64 {
+    if c == 32 { ret 1 }   // space
+    if c == 9 { ret 1 }    // tab
+    if c == 10 { ret 1 }   // newline
+    if c == 13 { ret 1 }   // carriage return
+    ret 0
+}
+
+fn fcx_is_digit(c) -> i64 {
+    if c >= 48 {
+        if c <= 57 {
+            ret 1
+        }
+    }
+    ret 0
+}
+
+// ============================================================================
+// Parse a single digit character to value
+// ============================================================================
+
+fn fcx_digit_value(c) -> i64 {
+    if c >= 48 {
+        if c <= 57 {
+            ret c - 48
+        }
+    }
+    ret 0
+}
+
+// ============================================================================
+// Get JSON token type from first character
+// Returns: 0=eof, 1=obj_start, 2=obj_end, 3=arr_start, 4=arr_end,
+//          5=colon, 6=comma, 7=string, 8=number, 9=true, 10=false, 11=null
+// ============================================================================
+
+fn fcx_json_token_type(c) -> i64 {
+    if c == 0 { ret 0 }     // EOF
+    if c == 123 { ret 1 }   // {
+    if c == 125 { ret 2 }   // }
+    if c == 91 { ret 3 }    // [
+    if c == 93 { ret 4 }    // ]
+    if c == 58 { ret 5 }    // :
+    if c == 44 { ret 6 }    // ,
+    if c == 34 { ret 7 }    // "
+    if c == 45 { ret 8 }    // - (negative number)
+    if fcx_is_digit(c) == 1 { ret 8 }  // number
+    if c == 116 { ret 9 }   // t (true)
+    if c == 102 { ret 10 }  // f (false)
+    if c == 110 { ret 11 }  // n (null)
+    ret 12  // unknown/whitespace
+}
+
+// ============================================================================
+// Validate bracket balance
+// Takes counts of each bracket type, returns 0 if balanced
+// ============================================================================
+
+fn fcx_json_check_balance(obj_open, obj_close, arr_open, arr_close) -> i64 {
+    let obj_diff := obj_open - obj_close
+    let arr_diff := arr_open - arr_close
+    
+    if obj_diff != 0 {
+        ret obj_diff
+    }
+    if arr_diff != 0 {
+        ret arr_diff
+    }
+    ret 0
+}
+
+// ============================================================================
+// Parse integer from digits (up to 18 digits)
+// d0-d17 are digit characters (48-57), 0 means no more digits
+// ============================================================================
+
+fn fcx_json_parse_digits(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> i64 {
+    let value := 0
+    
+    if d0 >= 48 {
+        if d0 <= 57 {
+            value := value * 10 + (d0 - 48)
+        }
+    }
+    if d1 >= 48 {
+        if d1 <= 57 {
+            value := value * 10 + (d1 - 48)
+        }
+    }
+    if d2 >= 48 {
+        if d2 <= 57 {
+            value := value * 10 + (d2 - 48)
+        }
+    }
+    if d3 >= 48 {
+        if d3 <= 57 {
+            value := value * 10 + (d3 - 48)
+        }
+    }
+    if d4 >= 48 {
+        if d4 <= 57 {
+            value := value * 10 + (d4 - 48)
+        }
+    }
+    if d5 >= 48 {
+        if d5 <= 57 {
+            value := value * 10 + (d5 - 48)
+        }
+    }
+    if d6 >= 48 {
+        if d6 <= 57 {
+            value := value * 10 + (d6 - 48)
+        }
+    }
+    if d7 >= 48 {
+        if d7 <= 57 {
+            value := value * 10 + (d7 - 48)
+        }
+    }
+    if d8 >= 48 {
+        if d8 <= 57 {
+            value := value * 10 + (d8 - 48)
+        }
+    }
+    
+    ret value
+}
+
+// ============================================================================
+// String hash (DJB2 algorithm)
+// Takes up to 8 characters
+// ============================================================================
+
+fn fcx_json_hash8(c0, c1, c2, c3, c4, c5, c6, c7) -> i64 {
+    let hash := 5381
+    
+    if c0 != 0 {
+        hash := hash * 33 + c0
+    }
+    if c1 != 0 {
+        hash := hash * 33 + c1
+    }
+    if c2 != 0 {
+        hash := hash * 33 + c2
+    }
+    if c3 != 0 {
+        hash := hash * 33 + c3
+    }
+    if c4 != 0 {
+        hash := hash * 33 + c4
+    }
+    if c5 != 0 {
+        hash := hash * 33 + c5
+    }
+    if c6 != 0 {
+        hash := hash * 33 + c6
+    }
+    if c7 != 0 {
+        hash := hash * 33 + c7
+    }
+    
+    ret hash
+}
+
+// ============================================================================
+// Validate escape sequence character
+// ============================================================================
+
+fn fcx_json_valid_escape(c) -> i64 {
+    if c == 34 { ret 1 }   // \"
+    if c == 92 { ret 1 }   // \\
+    if c == 47 { ret 1 }   // \/
+    if c == 98 { ret 1 }   // \b
+    if c == 102 { ret 1 }  // \f
+    if c == 110 { ret 1 }  // \n
+    if c == 114 { ret 1 }  // \r
+    if c == 116 { ret 1 }  // \t
+    if c == 117 { ret 1 }  // \uXXXX
+    ret 0
+}
+
+// ============================================================================
+// Check if character is valid in JSON string (non-control)
+// ============================================================================
+
+fn fcx_json_valid_string_char(c) -> i64 {
+    if c < 32 { ret 0 }
+    ret 1
+}
+
+// ============================================================================
+// Get value type from token type
+// Returns: 0=invalid, 1=object, 2=array, 3=string, 4=number, 5=bool, 6=null
+// ============================================================================
+
+fn fcx_json_value_type_from_token(token_type) -> i64 {
+    if token_type == 1 { ret 1 }   // { -> object
+    if token_type == 3 { ret 2 }   // [ -> array
+    if token_type == 7 { ret 3 }   // " -> string
+    if token_type == 8 { ret 4 }   // number
+    if token_type == 9 { ret 5 }   // true -> bool
+    if token_type == 10 { ret 5 }  // false -> bool
+    if token_type == 11 { ret 6 }  // null
+    ret 0
+}
+
+// ============================================================================
+// Maximum nesting depth
+// ============================================================================
+
+fn fcx_json_max_depth() -> i64 {
+    ret 512
+}
+
+// ============================================================================
+// Compare two characters
+// ============================================================================
+
+fn fcx_json_char_eq(a, b) -> i64 {
+    if a == b {
+        ret 1
+    }
+    ret 0
+}
+
+// ============================================================================
+// Simple multiply-add for number parsing
+// ============================================================================
+
+fn fcx_json_mul_add(value, multiplier, addend) -> i64 {
+    ret value * multiplier + addend
+}
+
+// ============================================================================
+// Negate a number
+// ============================================================================
+
+fn fcx_json_negate(value) -> i64 {
+    ret 0 - value
+}
+
+// ============================================================================
+// Increment
+// ============================================================================
+
+fn fcx_json_inc(value) -> i64 {
+    ret value + 1
+}
+
+// ============================================================================
+// Decrement
+// ============================================================================
+
+fn fcx_json_dec(value) -> i64 {
+    ret value - 1
+}

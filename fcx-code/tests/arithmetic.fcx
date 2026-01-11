@@ -1,0 +1,23 @@
+// Test: Basic arithmetic operations
+fn main() -> i64 {
+    let a := 10
+    let b := 5
+    
+    // Addition: 10 + 5 = 15
+    let sum := a + b
+    print>sum
+    
+    // Subtraction: 10 - 5 = 5
+    let diff := a - b
+    print>diff
+    
+    // Multiplication: 10 * 5 = 50
+    let prod := a * b
+    print>prod
+    
+    // Division: 10 / 5 = 2
+    let quot := a / b
+    print>quot
+    
+    ret 0
+}

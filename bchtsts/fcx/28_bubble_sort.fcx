@@ -1,0 +1,35 @@
+// Benchmark: Bubble sort simulation
+// Tests: Nested loops, comparisons, swaps
+
+fn main() -> i64 {
+    let n := 500
+    let iterations := 10
+    let total := 0
+    let iter := 0
+    
+    while iter < iterations {
+        // Simulate sorting by counting swaps
+        let swaps := 0
+        let i := 0
+        while i < n - 1 {
+            let j := 0
+            while j < n - i - 1 {
+                // Simulate comparison and swap
+                let a := (n - j) * 17
+                let b := (n - j - 1) * 17
+                if a > b {
+                    swaps := swaps + 1
+                }
+                j := j + 1
+            }
+            i := i + 1
+        }
+        total := total + swaps
+        iter := iter + 1
+    }
+    
+    if total > 0 {
+        ret 0
+    }
+    ret 1
+}

@@ -1,0 +1,25 @@
+// Benchmark: Array-like summation (simulated with loop)
+// Tests: Sequential access pattern
+
+fn main() -> i64 {
+    let size := 10000
+    let iterations := 1000
+    let total := 0
+    let iter := 0
+    
+    while iter < iterations {
+        let sum := 0
+        let i := 0
+        while i < size {
+            sum := sum + i
+            i := i + 1
+        }
+        total := total + sum
+        iter := iter + 1
+    }
+    
+    if total > 0 {
+        ret 0
+    }
+    ret 1
+}

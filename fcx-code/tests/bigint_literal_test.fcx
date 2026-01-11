@@ -1,0 +1,14 @@
+// Test bigint literal parsing for values > 64 bits
+
+fn main() -> i64 {
+    // Test 128-bit literal (exceeds i64 max of 9223372036854775807)
+    // 2^64 = 18446744073709551616
+    let big128: i128 = 18446744073709551616
+    print> big128
+    
+    // Test another large value: 12345678901234567890123456789
+    let big128_2: i128 = 12345678901234567890
+    print> big128_2
+    
+    ret 0
+}

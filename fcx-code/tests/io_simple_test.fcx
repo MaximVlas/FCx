@@ -1,0 +1,9 @@
+// Simple I/O test
+use std::io::io
+
+fn main() {
+    println("Hello!")
+    putchar(65)
+    newline()
+    ret 0
+}

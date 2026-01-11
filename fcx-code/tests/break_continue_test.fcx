@@ -1,0 +1,29 @@
+// Test break and continue statements
+
+fn main() {
+    // Test 1: break exits loop early
+    let sum = 0;
+    let i = 0;
+    loop {
+        ?(i >= 100) -> break;  // Safety limit
+        sum := sum + i;
+        i := i + 1;
+        ?(i == 5) -> break;    // Break when i reaches 5
+    }
+    // sum should be 0+1+2+3+4 = 10
+    
+    // Test 2: continue skips iteration
+    let count = 0;
+    i := 0;
+    loop {
+        i := i + 1;
+        ?(i > 10) -> break;
+        ?(i == 3) -> continue;  // Skip when i is 3
+        ?(i == 7) -> continue;  // Skip when i is 7
+        count := count + 1;
+    }
+    // count should be 8 (10 iterations minus 2 skipped)
+    
+    // Return sum * 10 + count = 10 * 10 + 8 = 108
+    ret sum * 10 + count;
+}

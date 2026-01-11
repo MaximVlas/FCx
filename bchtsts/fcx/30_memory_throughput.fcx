@@ -1,0 +1,35 @@
+// Benchmark: Memory throughput simulation
+// Tests: Sequential read/write patterns
+
+fn main() -> i64 {
+    let size := 100000
+    let iterations := 100
+    let total := 0
+    let iter := 0
+    
+    while iter < iterations {
+        // Simulate memory writes
+        let write_sum := 0
+        let i := 0
+        while i < size {
+            write_sum := write_sum + i * 3
+            i := i + 1
+        }
+        
+        // Simulate memory reads
+        let read_sum := 0
+        i := 0
+        while i < size {
+            read_sum := read_sum + i * 3
+            i := i + 1
+        }
+        
+        total := total + write_sum + read_sum
+        iter := iter + 1
+    }
+    
+    if total > 0 {
+        ret 0
+    }
+    ret 1
+}

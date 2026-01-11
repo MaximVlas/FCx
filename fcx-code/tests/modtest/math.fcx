@@ -1,0 +1,11 @@
+pub fn add(a, b) {
+    ret a + b;
+}
+
+pub fn sub(a, b) {
+    ret a - b;
+}
+
+pub fn mul(a, b) {
+    ret a * b;
+}

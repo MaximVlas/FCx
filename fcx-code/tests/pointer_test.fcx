@@ -1,0 +1,49 @@
+fn main() {
+    let arr = mem>80, 8;
+    let i = 0;
+    loop {
+        ?(i >= 10) -> break;
+        arr[i] := i * i;  
+        // S^2 : 0, 1, 4, 9, 16, 25, 36, 49, 64, 81
+        i := i + 1;
+    }
+    
+    // Sums elements
+    let sum = 0;
+    i := 0;
+    loop {
+        ?(i >= 10) -> break;
+        sum := sum + arr[i];
+        i := i + 1;
+    }
+    
+    // Finds the iggest element
+    let max = arr[0];
+    i := 1;
+    loop {
+        ?(i >= 10) -> break;
+        let val = arr[i];
+        ?(val > max) -> max := val;
+        i := i + 1;
+    }
+    
+    // Reverses the array
+    let left = 0;
+    let right = 9;
+    loop {
+        ?(left >= right) -> break;
+        // Swaps arr[left] and arr[right]
+        let tmp = arr[left];
+        arr[left] := arr[right];
+        arr[right] := tmp;
+        left := left + 1;
+        right := right - 1;
+    }
+
+    let first_after_reverse = arr[0];
+    >mem arr;
+    
+    // Return: sum=285, max=81, first_after=81
+    // Return sum as exit code (285 mod 256 = 29)
+    ret sum;
+}

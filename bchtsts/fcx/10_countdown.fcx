@@ -1,0 +1,26 @@
+// Benchmark: Decrement loop performance
+// Tests: Subtraction in loops
+
+fn decrement_sum(start, count) -> i64 {
+    let sum := 0
+    let val := start
+    let i := 0
+    while i < count {
+        sum := sum + val
+        val := val - 1
+        if val < 0 {
+            val := start
+        }
+        i := i + 1
+    }
+    ret sum
+}
+
+fn main() -> i64 {
+    let result := decrement_sum(1000, 10000000)
+    
+    if result > 0 {
+        ret 0
+    }
+    ret 1
+}

@@ -1,0 +1,30 @@
+// Iterative fibonacci - O(n) instead of O(2^n)
+fn fib(n) -> i64 {
+    if n <= 1 {
+        ret n
+    }
+    
+    let a := 0
+    let b := 1
+    let i := 2
+    
+    while i <= n {
+        let temp := a + b
+        a := b
+        b := temp
+        i := i + 1
+    }
+    
+    ret b
+}
+
+fn main() -> i64 {
+    // Prints the first 20 fibonacci numbers
+    let i := 0
+    while i < 20 {
+        let f := fib(i)
+        print>f
+        i := i + 1
+    }
+    ret 0
+}

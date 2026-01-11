@@ -1,0 +1,29 @@
+// Benchmark: Modulo operations
+// Tests: Modulo performance (manual in FCx)
+
+fn main() -> i64 {
+    let iterations := 5000000
+    let sum := 0
+    let i := 1
+    
+    while i <= iterations {
+        // Manual modulo: a % b = a - (a/b)*b
+        let a := i
+        let b := 17
+        let div := a / b
+        let remainder := a - div * b
+        
+        let c := i
+        let d := 23
+        let div2 := c / d
+        let remainder2 := c - div2 * d
+        
+        sum := sum + remainder + remainder2
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

@@ -1,0 +1,43 @@
+// Benchmark: Binary search simulation
+// Tests: Divide and conquer, comparisons
+
+fn binary_search(target, size) -> i64 {
+    let low := 0
+    let high := size - 1
+    let steps := 0
+    
+    while low <= high {
+        let mid := (low + high) / 2
+        steps := steps + 1
+        
+        if mid == target {
+            ret steps
+        }
+        if mid < target {
+            low := mid + 1
+        } else {
+            high := mid - 1
+        }
+    }
+    ret steps
+}
+
+fn main() -> i64 {
+    let size := 1000000
+    let iterations := 1000000
+    let total := 0
+    let i := 0
+    
+    while i < iterations {
+        let target := i * 7
+        let div := target / size
+        target := target - div * size
+        total := total + binary_search(target, size)
+        i := i + 1
+    }
+    
+    if total > 0 {
+        ret 0
+    }
+    ret 1
+}

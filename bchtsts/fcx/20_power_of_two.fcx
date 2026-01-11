@@ -1,0 +1,28 @@
+// Benchmark: Power of two checks
+// Tests: Bitwise AND for power-of-2 detection
+
+fn is_power_of_two(n) -> i64 {
+    if n <= 0 {
+        ret 0
+    }
+    if (n & (n - 1)) == 0 {
+        ret 1
+    }
+    ret 0
+}
+
+fn main() -> i64 {
+    let iterations := 10000000
+    let count := 0
+    let i := 1
+    
+    while i <= iterations {
+        count := count + is_power_of_two(i)
+        i := i + 1
+    }
+    
+    if count > 0 {
+        ret 0
+    }
+    ret 1
+}

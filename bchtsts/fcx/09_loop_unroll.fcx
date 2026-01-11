@@ -1,0 +1,21 @@
+// Benchmark: Manual loop unrolling effect
+// Tests: Instruction-level parallelism
+
+fn main() -> i64 {
+    let iterations := 25000000
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        sum := sum + i
+        sum := sum + i + 1
+        sum := sum + i + 2
+        sum := sum + i + 3
+        i := i + 4
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

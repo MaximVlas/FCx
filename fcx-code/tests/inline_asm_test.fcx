@@ -1,0 +1,23 @@
+// Inline assembly test for FCx
+// Tests both single-line and multiline syntax
+// Note: $ for immediates is auto-escaped to $$ for LLVM
+
+fn main() {
+    // Single-line syntax
+    asm% "nop"
+    
+    // Multiline syntax with braces
+    asm% {
+        nop
+        nop
+        nop
+    }
+    
+    // Another single-line with immediate (auto-escaped)
+    asm% "movq $0, %rax"
+    
+    // xchg is a no-op when same register
+    asm% "xchg %rax, %rax"
+    
+    ret 42
+}

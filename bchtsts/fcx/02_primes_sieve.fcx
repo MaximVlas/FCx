@@ -1,0 +1,44 @@
+// Benchmark: Prime number sieve (trial division)
+// Tests: Nested loops, modulo operations, conditionals
+
+fn is_prime(n) -> i64 {
+    if n < 2 {
+        ret 0
+    }
+    if n == 2 {
+        ret 1
+    }
+    if (n & 1) == 0 {
+        ret 0
+    }
+    let i := 3
+    while i * i <= n {
+        let temp := n
+        while temp >= i {
+            temp := temp - i
+        }
+        if temp == 0 {
+            ret 0
+        }
+        i := i + 2
+    }
+    ret 1
+}
+
+fn main() -> i64 {
+    let count := 0
+    let n := 2
+    let limit := 100000
+    
+    while n < limit {
+        if is_prime(n) == 1 {
+            count := count + 1
+        }
+        n := n + 1
+    }
+    
+    if count > 0 {
+        ret 0
+    }
+    ret 1
+}

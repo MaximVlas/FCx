@@ -1,0 +1,24 @@
+// Benchmark: XOR operations
+// Tests: XOR performance, variable swapping
+
+fn main() -> i64 {
+    let iterations := 10000000
+    let a := 12345678
+    let b := 87654321
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        // XOR swap
+        a := a ^ b
+        b := a ^ b
+        a := a ^ b
+        sum := sum + (a ^ b)
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

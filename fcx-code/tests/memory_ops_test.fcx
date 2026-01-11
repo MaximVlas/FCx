@@ -1,0 +1,41 @@
+// Test memory operations: alignment and prefetch
+
+fn main() {
+    // Test align_up>
+    let val1 = 17;
+    let aligned1 = align_up> val1, 8;  // Should be 24 (next multiple of 8)
+    
+    let val2 = 16;
+    let aligned2 = align_up> val2, 8;  // Should be 16 (already aligned)
+    
+    let val3 = 1;
+    let aligned3 = align_up> val3, 16; // Should be 16
+    
+    // Test align_down>
+    let val4 = 17;
+    let aligned4 = align_down> val4, 8;  // Should be 16
+    
+    let val5 = 31;
+    let aligned5 = align_down> val5, 16; // Should be 16
+    
+    // Test is_aligned?>
+    let check1 = is_aligned?> 16, 8;   // Should be 1 (true)
+    let check2 = is_aligned?> 17, 8;   // Should be 0 (false)
+    let check3 = is_aligned?> 32, 16;  // Should be 1 (true)
+    
+    // Test prefetch (just verify it compiles and runs)
+    let arr = mem>64, 8;
+    prefetch> arr;
+    prefetch_write> arr;
+    
+    // Store some values
+    arr[0] := 100;
+    arr[1] := 200;
+    
+    // Free memory
+    >mem arr;
+    
+    // Calculate result: aligned1 + aligned2 + aligned3 + aligned4 + aligned5 + check1 + check2 + check3
+    // = 24 + 16 + 16 + 16 + 16 + 1 + 0 + 1 = 90
+    ret aligned1 + aligned2 + aligned3 + aligned4 + aligned5 + check1 + check2 + check3;
+}

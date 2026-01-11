@@ -1,0 +1,60 @@
+// Test the improved I/O module
+use std::io::io
+
+fn main() {
+    // Test basic println
+    println("Hello, FCx!")
+    
+    // Test integer printing
+    puts("Integers: ")
+    print_int(42)
+    puts(", ")
+    print_int(0 - 123)
+    puts(", ")
+    print_uint(999)
+    newline()
+    
+    // Test hex
+    puts("Hex: ")
+    print_hex(255)
+    puts(", ")
+    print_hex(4096)
+    puts(", ")
+    print_hex_upper(255)
+    newline()
+    
+    // Test binary
+    puts("Binary: ")
+    print_bin(42)
+    newline()
+    
+    // Test boolean
+    puts("Bool: ")
+    print_bool(1)
+    puts(", ")
+    print_bool(0)
+    newline()
+    
+    // Test padding
+    puts("Padded: [")
+    print_int_pad(42, 6)
+    puts("]")
+    newline()
+    
+    puts("Zero-pad: [")
+    print_int_zero(42, 6)
+    puts("]")
+    newline()
+    
+    puts("Negative zero-pad: [")
+    print_int_zero(0 - 7, 4)
+    puts("]")
+    newline()
+    
+    // Test repeat (asterisks)
+    print_repeat(42, 10)
+    newline()
+    
+    println("Done!")
+    ret 0
+}

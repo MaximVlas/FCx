@@ -1,0 +1,77 @@
+// Test clobber detection for inline assembly
+
+fn test_clobber_detection() {
+    // This inline asm modifies rax, rdi, rsi, rdx
+    // The clobber detection should automatically add these
+    let x = 42
+    let y = 100
+    
+    // Store values in registers that will be clobbered
+    asm% {
+        movq ${x}, %rax
+        movq ${y}, %rdi
+        addq %rdi, %rax
+    }
+    
+    // If clobber detection works, x and y should still be accessible
+    // because LLVM knows those registers were clobbered
+    ret x + y
+}
+
+fn main() {
+    let result = test_clobber_detection()
+    
+    // Print "Result: " then the number
+    // result should be 142 (42 + 100)
+    
+    // Print '1'
+    asm% {
+        subq $8, %rsp
+        movb $49, (%rsp)
+        movq $1, %rax
+        movq $1, %rdi
+        leaq (%rsp), %rsi
+        movq $1, %rdx
+        syscall
+        addq $8, %rsp
+    }
+    
+    // Print '4'
+    asm% {
+        subq $8, %rsp
+        movb $52, (%rsp)
+        movq $1, %rax
+        movq $1, %rdi
+        leaq (%rsp), %rsi
+        movq $1, %rdx
+        syscall
+        addq $8, %rsp
+    }
+    
+    // Print '2'
+    asm% {
+        subq $8, %rsp
+        movb $50, (%rsp)
+        movq $1, %rax
+        movq $1, %rdi
+        leaq (%rsp), %rsi
+        movq $1, %rdx
+        syscall
+        addq $8, %rsp
+    }
+    
+    // Print newline
+    asm% {
+        subq $8, %rsp
+        movb $10, (%rsp)
+        movq $1, %rax
+        movq $1, %rdi
+        leaq (%rsp), %rsi
+        movq $1, %rdx
+        syscall
+        addq $8, %rsp
+    }
+    
+    // Return result - 142 to verify
+    ret result - 142
+}

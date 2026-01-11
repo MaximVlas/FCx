@@ -1,0 +1,27 @@
+// Benchmark: Array-like copy (simulated)
+// Tests: Memory copy throughput simulation
+
+fn main() -> i64 {
+    let size := 10000
+    let iterations := 500
+    let total := 0
+    let iter := 0
+    
+    while iter < iterations {
+        let i := 0
+        let sum := 0
+        while i < size {
+            // Simulate copy: read and accumulate
+            let val := i * 2 + 1
+            sum := sum + val
+            i := i + 1
+        }
+        total := total + sum
+        iter := iter + 1
+    }
+    
+    if total > 0 {
+        ret 0
+    }
+    ret 1
+}

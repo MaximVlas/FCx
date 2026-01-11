@@ -1,0 +1,37 @@
+// Benchmark: GCD and LCM computation
+// Tests: Modulo operations, function calls
+
+fn gcd(a, b) -> i64 {
+    while b != 0 {
+        let temp := b
+        // Manual modulo
+        let r := a
+        while r >= b {
+            r := r - b
+        }
+        b := r
+        a := temp
+    }
+    ret a
+}
+
+fn lcm(a, b) -> i64 {
+    ret (a * b) / gcd(a, b)
+}
+
+fn main() -> i64 {
+    let iterations := 5000000
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        sum := sum + gcd(48, 18)
+        sum := sum + lcm(12, 8)
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

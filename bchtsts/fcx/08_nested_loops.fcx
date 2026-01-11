@@ -1,0 +1,23 @@
+// Benchmark: Nested loop performance
+// Tests: Loop nesting overhead, multiplication
+
+fn main() -> i64 {
+    let outer := 1000
+    let inner := 1000
+    let sum := 0
+    let i := 0
+    
+    while i < outer {
+        let j := 0
+        while j < inner {
+            sum := sum + i * j
+            j := j + 1
+        }
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

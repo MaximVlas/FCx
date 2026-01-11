@@ -1,0 +1,19 @@
+// Test print> with various types
+
+fn main() -> i64 {
+    // Integer types
+    let i: i64 = 42
+    print> i
+    
+    let neg: i64 = -123
+    print> neg
+    
+    // Big integers (value that fits in i64 but stored as i128)
+    let big: i128 = 9223372036854775807
+    print> big
+    
+    // String
+    print> "Hello, FCx!"
+    
+    ret 0
+}

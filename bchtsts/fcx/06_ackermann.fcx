@@ -1,0 +1,29 @@
+// Benchmark: Ackermann function (limited)
+// Tests: Deep recursion, function call overhead
+
+fn ackermann(m, n) -> i64 {
+    if m == 0 {
+        ret n + 1
+    }
+    if n == 0 {
+        ret ackermann(m - 1, 1)
+    }
+    ret ackermann(m - 1, ackermann(m, n - 1))
+}
+
+fn main() -> i64 {
+    let iterations := 100
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        // Use small values to avoid stack overflow
+        sum := sum + ackermann(3, 6)
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

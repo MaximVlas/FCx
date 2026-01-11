@@ -1,0 +1,43 @@
+// Test inline asm with variable references using ${varname} syntax
+
+fn putchar(c) {
+    // Use ${c} to reference the parameter
+    asm% {
+        pushq ${c}
+        movq $1, %rax
+        movq $1, %rdi
+        movq %rsp, %rsi
+        movq $1, %rdx
+        syscall
+        addq $8, %rsp
+    }
+    ret 0
+}
+
+fn newline() {
+    putchar(10)
+    ret 0
+}
+
+fn main() {
+    // Test: print "Hi!" using putchar with variable refs
+    putchar(72)   // H
+    putchar(105)  // i
+    putchar(33)   // !
+    newline()
+    
+    // Test with local variable
+    let x = 65    // 'A'
+    asm% {
+        pushq ${x}
+        movq $1, %rax
+        movq $1, %rdi
+        movq %rsp, %rsi
+        movq $1, %rdx
+        syscall
+        addq $8, %rsp
+    }
+    newline()
+    
+    ret 0
+}

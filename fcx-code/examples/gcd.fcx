@@ -1,0 +1,26 @@
+// Example: Greatest Common Divisor (Euclidean algorithm)
+fn gcd(a, b) -> i64 {
+    while b != 0 {
+        // Manual modulo: a % b
+        let temp := a
+        while temp >= b {
+            temp := temp - b
+        }
+        a := b
+        b := temp
+    }
+    ret a
+}
+
+fn main() -> i64 {
+    let r1 := gcd(48, 18)
+    print>r1  // 6
+    
+    let r2 := gcd(100, 35)
+    print>r2  // 5
+    
+    let r3 := gcd(17, 13)
+    print>r3  // 1
+    
+    ret 0
+}

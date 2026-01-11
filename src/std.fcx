@@ -1,0 +1,81 @@
+// FCx Standard Library - Single Header Approach
+// Basic I/O and utility functions
+
+// ============================================================================
+// Low-level character output
+// ============================================================================
+
+fn putchar(c) {
+    asm% {
+        subq $8, %rsp
+        movq ${c}, %rax
+        movb %al, (%rsp)
+        movq $1, %rax      // sys_write
+        movq $1, %rdi      // stdout
+        leaq (%rsp), %rsi  // buffer
+        movq $1, %rdx      // count
+        syscall
+        addq $8, %rsp
+    }
+    ret 0
+}
+
+fn newline() {
+    putchar(10)
+    ret 0
+}
+
+fn strlen(s) {
+    let len = 0
+    let p = s
+    loop {
+        let c = @p & 255
+        if c == 0 -> break
+        len = len + 1
+        p = p + 1
+    }
+    ret len
+}
+
+fn puts(s) {
+    let p = s
+    loop {
+        let c = @p & 255
+        if c == 0 -> break
+        putchar(c)
+        p = p + 1
+    }
+    ret 0
+}
+
+fn println(s) {
+    puts(s)
+    newline()
+    ret 0
+}
+
+fn print_int(n) {
+    let val = n
+    if val < 0 {
+        putchar(45)  // ASCII minus sign
+        val = 0 - val
+    }
+    
+    if val == 0 {
+        putchar(48)  // ASCII '0'
+        ret 0
+    }
+    
+    let div = val / 10
+    if div > 0 {
+        print_int(div)
+    }
+    putchar(48 + val - div * 10)
+    ret 0
+}
+
+fn println_int(n) {
+    print_int(n)
+    newline()
+    ret 0
+}

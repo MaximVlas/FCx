@@ -1,0 +1,27 @@
+// Test: Bitwise operations
+fn main() -> i64 {
+    let x := 10  // 0b1010
+    let y := 12  // 0b1100
+    
+    // AND: 10 & 12 = 8
+    let and_result := x & y
+    print>and_result
+    
+    // OR: 10 | 12 = 14
+    let or_result := x | y
+    print>or_result
+    
+    // XOR: 10 ^ 12 = 6
+    let xor_result := x ^ y
+    print>xor_result
+    
+    // Left shift: 10 << 2 = 40
+    let lshift := x << 2
+    print>lshift
+    
+    // Right shift: 10 >> 1 = 5
+    let rshift := x >> 1
+    print>rshift
+    
+    ret 0
+}

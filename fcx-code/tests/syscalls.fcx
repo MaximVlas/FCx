@@ -1,0 +1,11 @@
+// Test: System calls
+fn main() -> i64 {
+    // Write to stdout using $/ operator
+    1 $/ "Hello from FCx!\n", 16
+    
+    // Direct syscall using sys%
+    // sys% 1 is write(fd, buf, len)
+    // sys% 60 is exit(code)
+    
+    ret 0
+}

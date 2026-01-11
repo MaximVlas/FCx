@@ -1,0 +1,27 @@
+// Benchmark: Mixed arithmetic operations
+// Tests: Operation mixing, register pressure
+
+fn main() -> i64 {
+    let iterations := 5000000
+    let a := 100
+    let b := 7
+    let c := 13
+    let d := 3
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        let r := ((a + b) * c - d) / b + (a * d)
+        sum := sum + r
+        a := a + 1
+        if a > 200 {
+            a := 100
+        }
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

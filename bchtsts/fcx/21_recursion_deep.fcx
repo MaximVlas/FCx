@@ -1,0 +1,25 @@
+// Benchmark: Deep recursion
+// Tests: Function call overhead, stack usage
+
+fn recurse(n, acc) -> i64 {
+    if n == 0 {
+        ret acc
+    }
+    ret recurse(n - 1, acc + n)
+}
+
+fn main() -> i64 {
+    let iterations := 10000
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        sum := sum + recurse(100, 0)
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

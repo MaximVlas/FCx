@@ -1,0 +1,59 @@
+// Memory Stress Test - Tests FCx memory allocation via syscalls
+// Uses brk syscall (12) to allocate memory
+
+fn main() -> i64 {
+    print>"Memory Stress Test Starting..."
+    
+    // Get current brk using sys%(syscall_num, args...)
+    let current_brk := sys%(12, 0)  // brk(0) returns current break
+    print>"Current break:"
+    print>current_brk
+    
+    // Allocate 4KB by extending brk
+    let new_brk := current_brk + 4096
+    let result := sys%(12, new_brk)  // brk(new_brk)
+    
+    if result == new_brk {
+        print>"Test 1: Allocated 4KB via brk - PASS"
+    } else {
+        print>"Test 1: brk allocation failed"
+        print>result
+    }
+    
+    // Test 2: Allocate more memory
+    let more_brk := new_brk + 65536  // 64KB more
+    let result2 := sys%(12, more_brk)
+    
+    if result2 == more_brk {
+        print>"Test 2: Allocated 64KB more - PASS"
+    } else {
+        print>"Test 2: Large allocation failed"
+    }
+    
+    // Test 3: Stress test - many small allocations
+    let i := 0
+    let alloc_count := 0
+    let base := result2
+    
+    while i < 100 {
+        let next := base + (i * 64)  // 64 bytes each
+        let r := sys%(12, next)
+        if r == next {
+            alloc_count := alloc_count + 1
+        }
+        base := next
+        i := i + 1
+    }
+    
+    print>"Test 3: Stress allocations:"
+    print>alloc_count
+    
+    // Test 4: Calculate total allocated
+    let final_brk := sys%(12, 0)
+    let total := final_brk - current_brk
+    print>"Total memory allocated:"
+    print>total
+    
+    print>"Memory Stress Test Complete!"
+    ret 0
+}

@@ -1,0 +1,31 @@
+// Benchmark: Collatz conjecture sequence length
+// Tests: Conditionals, division, multiplication
+
+fn collatz_length(n) -> i64 {
+    let steps := 0
+    while n != 1 {
+        if (n & 1) == 0 {
+            n := n / 2
+        } else {
+            n := 3 * n + 1
+        }
+        steps := steps + 1
+    }
+    ret steps
+}
+
+fn main() -> i64 {
+    let sum := 0
+    let n := 1
+    let limit := 100000
+    
+    while n < limit {
+        sum := sum + collatz_length(n)
+        n := n + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

@@ -1,0 +1,5 @@
+// Example: Hello World
+fn main() -> i64 {
+    1 $/ "Hello, World!\n", 14
+    ret 0
+}

@@ -1,0 +1,38 @@
+// Benchmark: Function call chain
+// Tests: Multiple function call overhead
+
+fn f1(x) -> i64 {
+    ret x + 1
+}
+
+fn f2(x) -> i64 {
+    ret f1(x) * 2
+}
+
+fn f3(x) -> i64 {
+    ret f2(x) + 3
+}
+
+fn f4(x) -> i64 {
+    ret f3(x) - 1
+}
+
+fn f5(x) -> i64 {
+    ret f4(x) * 2
+}
+
+fn main() -> i64 {
+    let iterations := 5000000
+    let sum := 0
+    let i := 0
+    
+    while i < iterations {
+        sum := sum + f5(i)
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}

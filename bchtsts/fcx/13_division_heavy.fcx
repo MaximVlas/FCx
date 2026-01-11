@@ -1,0 +1,21 @@
+// Benchmark: Division-heavy workload
+// Tests: Division performance (typically slow)
+
+fn main() -> i64 {
+    let iterations := 5000000
+    let sum := 0
+    let i := 1
+    
+    while i <= iterations {
+        let a := 1000000 / i
+        let b := 999999 / i
+        let c := 888888 / i
+        sum := sum + a + b + c
+        i := i + 1
+    }
+    
+    if sum > 0 {
+        ret 0
+    }
+    ret 1
+}
