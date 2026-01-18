@@ -837,6 +837,8 @@ static const char *opcode_to_string(FcIROpcode opcode) {
     return "imul";
   case FCIR_IDIV:
     return "idiv";
+  case FCIR_IMOD:
+    return "imod";
   case FCIR_NEG:
     return "neg";
   case FCIR_INC:

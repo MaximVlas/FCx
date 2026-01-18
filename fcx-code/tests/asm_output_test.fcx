@@ -1,0 +1,13 @@
+// Test that asm outputs are captured correctly
+
+fn get_42() -> i64 {
+    let result := 0
+    asm% {
+        movq $42, ${result}
+    }
+    ret result
+}
+
+fn main() -> i64 {
+    ret get_42()
+}

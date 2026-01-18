@@ -1,0 +1,4 @@
+// Test literal
+fn main() -> i64 {
+    ret 42
+}

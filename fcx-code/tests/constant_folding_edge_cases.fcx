@@ -1,0 +1,73 @@
+// Test: Edge cases and error conditions for constant folding
+// These test boundary conditions and error handling
+
+fn main() -> i64 {
+    // Division by zero - should NOT be folded (runtime error)
+    let x := 42
+    let div_by_zero := x / 0        // Should remain as runtime division
+    
+    // Modulo by zero - should NOT be folded (runtime error)
+    let mod_by_zero := x /% 0        // Should remain as runtime modulo
+    
+    // Overflow conditions - should be folded with proper overflow semantics
+    let max_i32 := 2147483647
+    let overflow_add := max_i32 + 1         // Should wrap to -2147483648 (signed overflow)
+    let overflow_mul := max_i32 * 2         // Should wrap with overflow
+    
+    // Underflow conditions
+    let min_i32 := -2147483648
+    let underflow_sub := min_i32 - 1        // Should wrap to 2147483647
+    
+    // Shift by large amounts - should be folded with proper semantics
+    let large_shift_left := 1 << 31        // Should fold to -2147483648 (sign bit)
+    let large_shift_right := -1 >> 31      // Should fold to -1 (arithmetic shift)
+    
+    // Shift by zero - should be simplified
+    let shift_by_zero := x << 0             // Should simplify to x
+    let rshift_by_zero := x >> 0           // Should simplify to x
+    
+    // Negative shift amounts - implementation defined behavior
+    // These should NOT be folded at compile time
+    let neg_shift := x << -1                // Should remain as runtime shift
+    
+    // Very large constants that fit in registers
+    let large_const := 0x7FFFFFFFFFFFFFFF   // Max i64, should be folded
+    let large_add := large_const + 0        // Should simplify to large_const
+    
+    // Bitwise operations with all bits set
+    let all_ones := 0xFFFFFFFFFFFFFFFF
+    let and_all_ones := x & all_ones        // Should simplify to x
+    let or_all_ones := x | all_ones         // Should simplify to all_ones
+    
+    // Comparison edge cases - should be folded
+    let eq_zero := 0 == 0                   // Should fold to true
+    let ne_zero := 0 != 0                   // Should fold to false
+    let lt_same := 5 < 5                    // Should fold to false
+    let le_same := 5 <= 5                   // Should fold to true
+    let gt_same := 5 > 5                    // Should fold to false
+    let ge_same := 5 >= 5                   // Should fold to true
+    
+    // Nested constant expressions - should be fully folded
+    let nested := ((10 + 5) * 2) - (3 * 4) // Should fold to 18
+    let complex := (1 << 3) + (16 >> 2) - (7 & 3) // Should fold to 9
+    
+    // Print results to verify
+    print>overflow_add      // -2147483648 (if 32-bit semantics)
+    print>underflow_sub     // 2147483647 (if 32-bit semantics)
+    print>large_shift_left  // -2147483648
+    print>large_shift_right // -1
+    print>shift_by_zero     // 42
+    print>rshift_by_zero    // 42
+    print>large_add         // 0x7FFFFFFFFFFFFFFF
+    print>and_all_ones      // 42
+    print>eq_zero           // 1 (true)
+    print>ne_zero           // 0 (false)
+    print>lt_same           // 0 (false)
+    print>le_same           // 1 (true)
+    print>gt_same           // 0 (false)
+    print>ge_same           // 1 (true)
+    print>nested            // 18
+    print>complex           // 9
+    
+    ret 0
+}

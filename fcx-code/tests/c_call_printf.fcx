@@ -1,0 +1,13 @@
+// Test actually calling printf from C
+#importc <stdio.h>
+
+fn main() -> i64 {
+    // TODO: Need to implement external function calls in FCX
+    // This will require:
+    // 1. Parser recognizing external function names
+    // 2. IR gen creating external call instructions
+    // 3. LLVM backend emitting proper call instructions
+    
+    // For now, let's create a wrapper C file that we can link
+    ret 0
+}

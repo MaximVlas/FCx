@@ -13,6 +13,7 @@ FcIRLowerContext* fc_ir_lower_create(void) {
     if (!ctx) return NULL;
     
     ctx->fc_module = NULL;
+    ctx->fcx_module = NULL;
     ctx->current_function = NULL;
     ctx->current_block = NULL;
     
@@ -479,7 +480,7 @@ bool fc_ir_lower_binary_op(FcIRLowerContext* ctx, const FcxIRInstruction* instr)
             fc_opcode = FCIR_IDIV;
             break;
         case FCXIR_MOD:
-            fc_opcode = FCIR_IDIV;  // MOD uses IDIV, remainder is in RDX
+            fc_opcode = FCIR_IMOD;  // Use dedicated modulo opcode
             break;
         case FCXIR_AND:
             fc_opcode = FCIR_AND;
@@ -711,10 +712,30 @@ bool fc_ir_lower_call(FcIRLowerContext* ctx, const FcxIRInstruction* instr) {
                        fc_ir_operand_vreg(arg));
     }
     
-    // Check if this is an external function (runtime function)
-    bool is_external = (func_name && 
-                       (strncmp(func_name, "_fcx_", 5) == 0 || 
-                        strncmp(func_name, "_external_", 10) == 0));
+    // Check if this is an external function
+    // 1. Runtime functions start with _fcx_
+    // 2. Explicitly marked external functions start with _external_
+    // 3. Functions not defined in the current module (C library functions like sqrt, printf, etc.)
+    bool is_external = false;
+    if (func_name) {
+        if (strncmp(func_name, "_fcx_", 5) == 0 || strncmp(func_name, "_external_", 10) == 0) {
+            is_external = true;
+        } else {
+            // Check if function is defined in current module
+            bool found_in_module = false;
+            for (uint32_t i = 0; i < ctx->fcx_module->function_count; i++) {
+                if (strcmp(ctx->fcx_module->functions[i].name, func_name) == 0) {
+                    found_in_module = true;
+                    break;
+                }
+            }
+            // If not found in module, it's external (C library function)
+            if (!found_in_module) {
+                is_external = true;
+                fprintf(stderr, "DEBUG: Function '%s' not found in module, treating as external\n", func_name);
+            }
+        }
+    }
     
     if (is_external) {
         // Use external function call
@@ -861,6 +882,41 @@ bool fc_ir_lower_instruction(FcIRLowerContext* ctx, const FcxIRInstruction* fcx_
             VirtualReg src = fc_ir_lower_map_vreg(ctx, fcx_instr->u.load_store.src);
             FcOperand mem_op = fc_ir_operand_mem(dest, (VirtualReg){0},
                                               fcx_instr->u.load_store.offset, 1);
+            fc_ir_build_mov(ctx->current_block,
+                           mem_op,
+                           fc_ir_operand_vreg(src));
+            return true;
+        }
+        
+        case FCXIR_LOAD_GLOBAL: {
+            // Global variable load - pass through to LLVM backend
+            // The LLVM backend will handle the actual global lookup
+            VirtualReg dest = fc_ir_lower_map_vreg(ctx, fcx_instr->u.global_op.vreg);
+            uint32_t global_index = fcx_instr->u.global_op.global_index;
+            
+            // Create a special instruction that the LLVM backend will recognize
+            // We use a MOV with a special immediate encoding
+            // Encode as: dest = load from global[global_index]
+            // Use negative immediate to signal global variable access
+            fc_ir_build_mov(ctx->current_block,
+                           fc_ir_operand_vreg(dest),
+                           fc_ir_operand_imm(-(int64_t)(global_index + 0x10000000)));
+            return true;
+        }
+        
+        case FCXIR_STORE_GLOBAL: {
+            // Global variable store - pass through to LLVM backend
+            VirtualReg src = fc_ir_lower_map_vreg(ctx, fcx_instr->u.global_op.vreg);
+            uint32_t global_index = fcx_instr->u.global_op.global_index;
+            
+            // Create a special instruction that the LLVM backend will recognize
+            // We use a MOV with a special immediate encoding for the destination
+            // Encode as: store src to global[global_index]
+            // Use a special memory operand with negative base to signal global store
+            VirtualReg special_base = {0};
+            special_base.id = UINT32_MAX - global_index;
+            special_base.flags = 0x8000;  // Global variable flag
+            FcOperand mem_op = fc_ir_operand_mem(special_base, (VirtualReg){0}, 0, 1);
             fc_ir_build_mov(ctx->current_block,
                            mem_op,
                            fc_ir_operand_vreg(src));
@@ -1101,6 +1157,9 @@ bool fc_ir_lower_function(FcIRLowerContext* ctx, const FcxIRFunction* fcx_functi
 bool fc_ir_lower_module(FcIRLowerContext* ctx, const FcxIRModule* fcx_module) {
     if (!ctx || !fcx_module) return false;
     
+    // Store reference to FCx module
+    ctx->fcx_module = fcx_module;
+    
     // Create FC IR module
     ctx->fc_module = fc_ir_module_create(fcx_module->name);
     if (!ctx->fc_module) {
@@ -1111,6 +1170,22 @@ bool fc_ir_lower_module(FcIRLowerContext* ctx, const FcxIRModule* fcx_module) {
     // Detect CPU features
     CpuFeatures features = fc_ir_detect_cpu_features();
     fc_ir_module_set_cpu_features(ctx->fc_module, features);
+    
+    // Copy global variables from FCx IR to FC IR
+    if (fcx_module->global_count > 0) {
+        ctx->fc_module->global_vars = malloc(fcx_module->global_count * sizeof(FcIRGlobalVar));
+        if (ctx->fc_module->global_vars) {
+            ctx->fc_module->global_var_count = fcx_module->global_count;
+            ctx->fc_module->global_var_capacity = fcx_module->global_count;
+            for (uint32_t i = 0; i < fcx_module->global_count; i++) {
+                ctx->fc_module->global_vars[i].name = strdup(fcx_module->globals[i].name);
+                ctx->fc_module->global_vars[i].type = fcx_module->globals[i].type;
+                ctx->fc_module->global_vars[i].init_value = fcx_module->globals[i].init_value;
+                ctx->fc_module->global_vars[i].is_const = fcx_module->globals[i].is_const;
+                ctx->fc_module->global_vars[i].has_init = fcx_module->globals[i].has_init;
+            }
+        }
+    }
     
     // Copy string literals from FCx IR to FC IR
     if (fcx_module->string_count > 0) {

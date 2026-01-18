@@ -15,12 +15,13 @@
 #include "ir/ir_optimize.h"
 #include "lexer/lexer.h"
 #include "module/preprocessor.h"
+#include "module/c_import_zig.h"
 #include "parser/parser.h"
 #include "runtime/bootstrap.h"
 #include "types/pointer_types.h"
 
 // FCx Compiler version and build info
-#define FCX_VERSION "0.2.11"
+#define FCX_VERSION "0.2.12"
 #define FCX_BUILD_DATE __DATE__
 #define FCX_BUILD_TIME __TIME__
 
@@ -30,6 +31,15 @@ typedef enum {
   PROFILE_RELEASE,    // Release build with optimizations
   PROFILE_SIZE,       // Size-optimized build
 } CompilationProfile;
+
+// Optimization levels (separate from profiles)
+typedef enum {
+  OPT_LEVEL_O0 = 0,    // Debug - no optimizations
+  OPT_LEVEL_O1,        // Quick - basic local opts
+  OPT_LEVEL_O2,        // Standard - standard optimizations
+  OPT_LEVEL_O3,        // Aggressive - aggressive optimizations
+  OPT_LEVEL_OS,        // Size - size optimizations
+} OptimizationLevel;
 
 // Compiler options
 typedef struct {
@@ -56,6 +66,7 @@ typedef struct {
   bool object_only;           // Generate object file only (.o)
   bool position_independent;  // Generate position-independent code
   CompilationProfile profile; // Compilation profile
+  OptimizationLevel opt_level; // Optimization level
 } CompilerOptions;
 
 // Print usage information
@@ -68,6 +79,11 @@ void print_usage(const char *program_name) {
   printf("  -o <file>              Output executable file (default: a.out)\n");
   printf("  -v, --verbose          Enable verbose output\n");
   printf("  -d, --debug            Enable debug information\n");
+  printf("  -O0                    No optimizations (debug mode)\n");
+  printf("  -O1                    Basic optimizations\n");
+  printf("  -O2                    Standard optimizations (default)\n");
+  printf("  -O3                    Aggressive optimizations\n");
+  printf("  -Os                    Size optimizations\n");
   printf("  --disallow-ambiguous   Disallow ambiguous operators (team coding "
          "standards)\n");
   printf("  --show-asm             Show generated assembly code\n");
@@ -412,6 +428,7 @@ bool parse_arguments(int argc, char *argv[], CompilerOptions *options) {
   options->object_only = false;
   options->position_independent = false;
   options->profile = PROFILE_RELEASE; // Default to release
+  options->opt_level = OPT_LEVEL_O2;  // Default to O2
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
@@ -425,6 +442,21 @@ bool parse_arguments(int argc, char *argv[], CompilerOptions *options) {
       options->verbose = true;
     } else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--debug") == 0) {
       options->debug = true;
+    } else if (strcmp(argv[i], "-O0") == 0) {
+      options->opt_level = OPT_LEVEL_O0;
+      options->profile = PROFILE_DEBUG;  // O0 implies debug profile
+    } else if (strcmp(argv[i], "-O1") == 0) {
+      options->opt_level = OPT_LEVEL_O1;
+      // Keep current profile
+    } else if (strcmp(argv[i], "-O2") == 0) {
+      options->opt_level = OPT_LEVEL_O2;
+      // Keep current profile
+    } else if (strcmp(argv[i], "-O3") == 0) {
+      options->opt_level = OPT_LEVEL_O3;
+      // Keep current profile
+    } else if (strcmp(argv[i], "-Os") == 0) {
+      options->opt_level = OPT_LEVEL_OS;
+      options->profile = PROFILE_SIZE;   // Os implies size profile
     } else if (strcmp(argv[i], "--disallow-ambiguous") == 0) {
       options->disallow_ambiguous_ops = true;
     } else if (strcmp(argv[i], "--show-asm") == 0) {
@@ -468,13 +500,16 @@ bool parse_arguments(int argc, char *argv[], CompilerOptions *options) {
       const char *profile = argv[i] + 10;
       if (strcmp(profile, "debug") == 0) {
         options->profile = PROFILE_DEBUG;
+        options->opt_level = OPT_LEVEL_O0;
         options->debug = true;
         options->enable_bounds_check = true;
         options->enable_leak_detection = true;
       } else if (strcmp(profile, "release") == 0) {
         options->profile = PROFILE_RELEASE;
+        // Keep current optimization level
       } else if (strcmp(profile, "size") == 0) {
         options->profile = PROFILE_SIZE;
+        options->opt_level = OPT_LEVEL_OS;
       } else {
         fprintf(stderr, "Error: Unknown profile '%s'\n", profile);
         fprintf(stderr, "Valid profiles: debug, release, size\n");
@@ -537,14 +572,24 @@ bool compile_fcx(const CompilerOptions *options) {
     printf("FCx Compiler v%s\n", FCX_VERSION);
     printf("Compiling: %s -> %s\n", options->input_file, options->output_file);
     
-    // Display compilation profile
+    // Display compilation profile and optimization level
     const char *profile_name = "release";
     if (options->profile == PROFILE_DEBUG) {
       profile_name = "debug";
     } else if (options->profile == PROFILE_SIZE) {
       profile_name = "size-optimized";
     }
-    printf("Profile: %s\n", profile_name);
+    
+    const char *opt_name = "O2";
+    switch (options->opt_level) {
+      case OPT_LEVEL_O0: opt_name = "O0"; break;
+      case OPT_LEVEL_O1: opt_name = "O1"; break;
+      case OPT_LEVEL_O2: opt_name = "O2"; break;
+      case OPT_LEVEL_O3: opt_name = "O3"; break;
+      case OPT_LEVEL_OS: opt_name = "Os"; break;
+    }
+    
+    printf("Profile: %s, Optimization: %s\n", profile_name, opt_name);
     
     // Display enabled features
     if (options->enable_bounds_check) {
@@ -754,11 +799,14 @@ bool compile_fcx(const CompilerOptions *options) {
   }
 
   // Run FCx IR optimizations (constant folding, dead code elimination, etc.)
-  if (ir_gen->module && options->profile != PROFILE_DEBUG) {
+  if (ir_gen->module && options->opt_level > OPT_LEVEL_O0) {
     if (options->verbose) {
-      printf("Running FCx IR optimizations...\n");
+      printf("Running FCx IR optimizations (level %s)...\n", 
+             options->opt_level == OPT_LEVEL_O1 ? "O1" :
+             options->opt_level == OPT_LEVEL_O2 ? "O2" :
+             options->opt_level == OPT_LEVEL_O3 ? "O3" : "Os");
     }
-    bool opt_changed = ir_optimize_module(ir_gen->module);
+    bool opt_changed = ir_optimize_module_with_level(ir_gen->module, options->opt_level);
     if (options->verbose && opt_changed) {
       printf("FCx IR optimizations applied\n");
     }
@@ -853,22 +901,16 @@ bool compile_fcx(const CompilerOptions *options) {
       printf("Vector width: %u bits\n", cpu_features.vector_width);
     }
 
-    LLVMBackendConfig llvm_config;
-    if (options->profile == PROFILE_DEBUG) {
-      llvm_config = llvm_debug_config();
-      if (options->verbose) {
-        printf("Debug profile: O0 optimization, debug info enabled\n");
-      }
-    } else if (options->profile == PROFILE_SIZE) {
-      llvm_config = llvm_size_config();
-      if (options->verbose) {
-        printf("Size profile: Os optimization\n");
-      }
-    } else {
-      llvm_config = llvm_release_config();
-      if (options->verbose) {
-        printf("Release profile: O3 optimization\n");
-      }
+    LLVMBackendConfig llvm_config = llvm_config_for_level(options->opt_level);
+    
+    if (options->verbose) {
+      const char *opt_desc = 
+        options->opt_level == OPT_LEVEL_O0 ? "O0 (no optimization, debug info enabled)" :
+        options->opt_level == OPT_LEVEL_O1 ? "O1 (basic optimizations)" :
+        options->opt_level == OPT_LEVEL_O2 ? "O2 (standard optimizations)" :
+        options->opt_level == OPT_LEVEL_O3 ? "O3 (aggressive optimizations)" :
+        "Os (size optimizations)";
+      printf("LLVM optimization: %s\n", opt_desc);
     }
 
     LLVMBackend *llvm_backend = llvm_backend_create(&cpu_features, &llvm_config);
@@ -881,11 +923,46 @@ bool compile_fcx(const CompilerOptions *options) {
       return false;
     }
 
+    // Get C/C++ import contexts - we'll inject them AFTER creating the LLVM module
+    CImportContext *c_import_ctx = preprocessor_get_c_import_context();
+    CImportContext *cpp_import_ctx = preprocessor_get_cpp_import_context();
+    
+    // Register external functions with C import contexts BEFORE processing
+    // This tells the Zig code which C functions to reference
+    if (c_import_ctx) {
+      if (options->verbose) {
+        printf("Registering %u external functions with C import context...\n", 
+               lower_ctx->fc_module->external_func_count);
+      }
+      for (uint32_t i = 0; i < lower_ctx->fc_module->external_func_count; i++) {
+        const char *func_name = lower_ctx->fc_module->external_functions[i];
+        // Only register functions that look like C library functions (not FCX runtime)
+        if (func_name[0] != '_' || strncmp(func_name, "_fcx_", 5) != 0) {
+          if (options->verbose) {
+            printf("  Registering C function: %s\n", func_name);
+          }
+          fcx_c_import_add_function(c_import_ctx, func_name);
+        }
+      }
+    }
+    
+    if (cpp_import_ctx) {
+      // Register C++ external functions
+      for (uint32_t i = 0; i < lower_ctx->fc_module->external_func_count; i++) {
+        const char *func_name = lower_ctx->fc_module->external_functions[i];
+        if (func_name[0] != '_' || strncmp(func_name, "_fcx_", 5) != 0) {
+          fcx_c_import_add_function(cpp_import_ctx, func_name);
+        }
+      }
+    }
+
     if (options->verbose) {
       printf("Emitting LLVM IR...\n");
     }
 
-    if (!llvm_emit_module(llvm_backend, lower_ctx->fc_module)) {
+    // Emit the FCX module first - this creates the LLVM module
+    // Pass C import contexts so they can be injected BEFORE external declarations
+    if (!llvm_emit_module_with_imports(llvm_backend, lower_ctx->fc_module, c_import_ctx, cpp_import_ctx, options->verbose)) {
       fprintf(stderr, "Error: LLVM IR emission failed: %s\n", 
               llvm_backend_get_error(llvm_backend));
       llvm_backend_destroy(llvm_backend);
@@ -958,6 +1035,7 @@ bool compile_fcx(const CompilerOptions *options) {
   // Cleanup
   fc_ir_lower_destroy(lower_ctx);
   ir_gen_destroy(ir_gen);
+  preprocessor_cleanup_c_imports();  // Clean up C/C++ import contexts
   preprocessor_destroy(pp);
   free(source);
   cleanup_operator_registry();

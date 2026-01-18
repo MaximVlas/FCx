@@ -1,0 +1,15 @@
+// Simple algebraic simplification test
+fn main() -> i64 {
+    let x := 42
+    
+    // These should be simplified
+    let add_zero := x + 0    // Should become MOV
+    let mul_one := x * 1     // Should become MOV
+    let sub_self := x - x    // Should become const 0
+    
+    print>add_zero
+    print>mul_one
+    print>sub_self
+    
+    ret 0
+}

@@ -13,6 +13,7 @@
 
 typedef struct {
     FcIRModule* fc_module;
+    const FcxIRModule* fcx_module;  // Reference to source FCx module
     FcIRFunction* current_function;
     FcIRBasicBlock* current_block;
     

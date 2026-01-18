@@ -1,4 +1,6 @@
 #include "llvm_backend.h"
+#include <llvm-c/IRReader.h>
+#include <llvm-c/Linker.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -57,6 +59,27 @@ LLVMBackendConfig llvm_size_config(void) {
     LLVMBackendConfig c = llvm_default_config();
     c.size_level = LLVM_SIZE_SMALL;
     return c;
+}
+
+LLVMBackendConfig llvm_config_for_level(int opt_level) {
+    switch (opt_level) {
+        case 0: // O0
+            return llvm_debug_config();
+        case 1: // O1
+            {
+                LLVMBackendConfig c = llvm_default_config();
+                c.opt_level = LLVM_OPT_LESS;
+                return c;
+            }
+        case 2: // O2
+            return llvm_default_config();
+        case 3: // O3
+            return llvm_release_config();
+        case 4: // Os
+            return llvm_size_config();
+        default:
+            return llvm_default_config();
+    }
 }
 
 LLVMBackend* llvm_backend_create(const CpuFeatures* features, const LLVMBackendConfig* config) {
@@ -131,6 +154,10 @@ void llvm_backend_destroy(LLVMBackend* b) {
     b->global_strings = NULL;
     b->global_string_count = 0;
     
+    free(b->global_vars);
+    b->global_vars = NULL;
+    b->global_var_count = 0;
+    
     free(b->external_funcs);
     b->external_funcs = NULL;
     b->external_func_count = 0;
@@ -195,6 +222,11 @@ void llvm_backend_reset(LLVMBackend* b) {
     free(b->global_strings);
     b->global_strings = NULL;
     b->global_string_count = 0;
+    
+    // Free global variables
+    free(b->global_vars);
+    b->global_vars = NULL;
+    b->global_var_count = 0;
     
     // Free external functions
     free(b->external_funcs);
@@ -328,6 +360,28 @@ static LLVMTypeRef llvm_ptr_type(LLVMBackend* b) {
     return LLVMPointerType(LLVMInt8TypeInContext(b->context), 0);
 }
 
+static bool vreg_type_is_signed(VRegType type) {
+    switch (type) {
+        case VREG_TYPE_I8:
+        case VREG_TYPE_I16:
+        case VREG_TYPE_I32:
+        case VREG_TYPE_I64:
+        case VREG_TYPE_I128:
+        case VREG_TYPE_I256:
+        case VREG_TYPE_I512:
+        case VREG_TYPE_I1024:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static LLVMTypeRef llvm_type_for_vreg_or_size(LLVMBackend* b, VirtualReg vreg, uint8_t default_size) {
+    if (vreg.type != VREG_TYPE_VOID) return llvm_type_for_vreg(b, vreg.type);
+    uint8_t sz = vreg.size > 0 ? vreg.size : default_size;
+    return llvm_int_type(b, sz);
+}
+
 static LLVMValueRef get_vreg(LLVMBackend* b, VirtualReg vreg) {
     LLVMFunctionContext* ctx = b->current_func_ctx;
     if (!ctx || vreg.id >= ctx->vreg_capacity) return NULL;
@@ -392,7 +446,11 @@ static void set_vreg(LLVMBackend* b, VirtualReg vreg, LLVMValueRef val) {
                 if (kind == LLVMIntegerTypeKind) {
                     unsigned bits = LLVMGetIntTypeWidth(val_type);
                     if (bits < target_bits) {
-                        val = LLVMBuildZExt(b->builder, val, target_ty, "");
+                        if (vreg_type_is_signed(vreg.type)) {
+                            val = LLVMBuildSExt(b->builder, val, target_ty, "");
+                        } else {
+                            val = LLVMBuildZExt(b->builder, val, target_ty, "");
+                        }
                     } else if (bits > target_bits) {
                         val = LLVMBuildTrunc(b->builder, val, target_ty, "");
                     }
@@ -471,12 +529,49 @@ static LLVMValueRef get_operand(LLVMBackend* b, const FcOperand* op) {
 }
 
 static LLVMValueRef cast_to(LLVMBackend* b, LLVMValueRef val, LLVMTypeRef target) {
+    if (!val || !target) return NULL;
+    
     LLVMTypeRef src = LLVMTypeOf(val);
+    LLVMTypeKind src_kind = LLVMGetTypeKind(src);
+    LLVMTypeKind target_kind = LLVMGetTypeKind(target);
+    
+    // No conversion needed if types match
     if (src == target) return val;
+    
+    // Handle pointer to integer conversion
+    if (src_kind == LLVMPointerTypeKind && target_kind == LLVMIntegerTypeKind) {
+        return LLVMBuildPtrToInt(b->builder, val, target, "ptr_to_int");
+    }
+    
+    // Handle integer to pointer conversion
+    if (src_kind == LLVMIntegerTypeKind && target_kind == LLVMPointerTypeKind) {
+        return LLVMBuildIntToPtr(b->builder, val, target, "int_to_ptr");
+    }
+    
+    // Only handle integer-to-integer conversions below
+    if (src_kind != LLVMIntegerTypeKind || target_kind != LLVMIntegerTypeKind) {
+        // For non-integer types or unsupported conversions, return original value
+        // (This is a conservative approach - could be enhanced with more type conversions)
+        return val;
+    }
+    
+    // Integer to integer conversion
     unsigned src_bits = LLVMGetIntTypeWidth(src);
     unsigned dst_bits = LLVMGetIntTypeWidth(target);
-    if (src_bits < dst_bits) return LLVMBuildZExt(b->builder, val, target, "");
-    if (src_bits > dst_bits) return LLVMBuildTrunc(b->builder, val, target, "");
+    
+    char name[32];
+    if (src_bits < dst_bits) {
+        // Check if we should sign-extend or zero-extend
+        // For now, use zero-extension as the default
+        snprintf(name, sizeof(name), "zext_%u_to_%u", src_bits, dst_bits);
+        return LLVMBuildZExt(b->builder, val, target, name);
+    }
+    
+    if (src_bits > dst_bits) {
+        snprintf(name, sizeof(name), "trunc_%u_to_%u", src_bits, dst_bits);
+        return LLVMBuildTrunc(b->builder, val, target, name);
+    }
+    
     return val;
 }
 
@@ -484,9 +579,88 @@ static bool emit_mov(LLVMBackend* b, const FcIRInstruction* i) {
     const FcOperand* dst = &i->operands[0];
     const FcOperand* src = &i->operands[1];
     
+    // Handle LEA (load effective address) without loading memory
+    if (i->opcode == FCIR_LEA && src->type == FC_OPERAND_MEMORY && dst->type == FC_OPERAND_VREG) {
+        LLVMTypeRef i64 = LLVMInt64TypeInContext(b->context);
+        
+        LLVMValueRef base = get_vreg(b, src->u.memory.base);
+        if (!base) {
+            base = LLVMConstInt(i64, 0, 0);
+        } else if (LLVMGetTypeKind(LLVMTypeOf(base)) == LLVMPointerTypeKind) {
+            base = LLVMBuildPtrToInt(b->builder, base, i64, "");
+        } else {
+            base = cast_to(b, base, i64);
+        }
+        
+        LLVMValueRef offset_val = LLVMConstInt(i64, src->u.memory.displacement, true);
+        
+        if (src->u.memory.index.id != 0) {
+            LLVMValueRef index = get_vreg(b, src->u.memory.index);
+            if (index) {
+                if (LLVMGetTypeKind(LLVMTypeOf(index)) == LLVMPointerTypeKind) {
+                    index = LLVMBuildPtrToInt(b->builder, index, i64, "");
+                } else {
+                    index = cast_to(b, index, i64);
+                }
+                LLVMValueRef scale = LLVMConstInt(i64, src->u.memory.scale, 0);
+                LLVMValueRef scaled = LLVMBuildMul(b->builder, index, scale, "");
+                offset_val = LLVMBuildAdd(b->builder, offset_val, scaled, "");
+            }
+        }
+        
+        LLVMValueRef addr = LLVMBuildAdd(b->builder, base, offset_val, "");
+        LLVMTypeRef target_ty = llvm_type_for_vreg_or_size(b, dst->u.vreg, 8);
+        if (LLVMGetTypeKind(target_ty) == LLVMPointerTypeKind) {
+            addr = LLVMBuildIntToPtr(b->builder, addr, target_ty, "");
+        } else {
+            addr = cast_to(b, addr, target_ty);
+        }
+        set_vreg(b, dst->u.vreg, addr);
+        b->instruction_count++;
+        return true;
+    }
+
+    // Check for global variable load pattern: MOV dest, -(global_index + 0x10000000)
+    if (src->type == FC_OPERAND_IMMEDIATE && src->u.immediate <= -(int64_t)0x10000000) {
+        // This is a global variable load
+        uint32_t global_index = (uint32_t)(-(src->u.immediate + 0x10000000));
+        
+        if (global_index < b->global_var_count && b->global_vars[global_index]) {
+            LLVMTypeRef i64 = LLVMInt64TypeInContext(b->context);
+            LLVMValueRef loaded = LLVMBuildLoad2(b->builder, i64, b->global_vars[global_index], "global_load");
+            
+            if (dst->type == FC_OPERAND_VREG) {
+                set_vreg(b, dst->u.vreg, loaded);
+            }
+            b->instruction_count++;
+            return true;
+        } else {
+            set_error(b, "Invalid global variable index: %u", global_index);
+            return false;
+        }
+    }
+    
+    // Check for global variable store pattern: memory operand with special flag
+    if (dst->type == FC_OPERAND_MEMORY && dst->u.memory.base.flags == 0x8000) {
+        // This is a global variable store
+        uint32_t global_index = UINT32_MAX - dst->u.memory.base.id;
+        
+        if (global_index < b->global_var_count && b->global_vars[global_index]) {
+            LLVMValueRef src_val = get_operand(b, src);
+            if (!src_val) { set_error(b, "Global store: null source"); return false; }
+            
+            LLVMBuildStore(b->builder, src_val, b->global_vars[global_index]);
+            b->instruction_count++;
+            return true;
+        } else {
+            set_error(b, "Invalid global variable index for store: %u", global_index);
+            return false;
+        }
+    }
+    
     // Check for comparison result pattern: MOV dest, -(condition_code + 1000)
     // This is generated by fc_ir_lower_comparison
-    if (src->type == FC_OPERAND_IMMEDIATE && src->u.immediate < -1000) {
+    if (src->type == FC_OPERAND_IMMEDIATE && src->u.immediate < -1000 && src->u.immediate > -(int64_t)0x10000000) {
         // This is a comparison result - extract the condition code
         int64_t condition_code = -(src->u.immediate + 1000);
         
@@ -539,6 +713,11 @@ static bool emit_mov(LLVMBackend* b, const FcIRInstruction* i) {
         LLVMTypeRef i64 = LLVMInt64TypeInContext(b->context);
         LLVMTypeRef i8 = LLVMInt8TypeInContext(b->context);
         LLVMTypeRef ptr_ty = llvm_ptr_type(b);
+        LLVMTypeRef load_ty = i64;
+        
+        if (dst->type == FC_OPERAND_VREG) {
+            load_ty = llvm_type_for_vreg_or_size(b, dst->u.vreg, 8);
+        }
         
         // Get base address as pointer
         LLVMValueRef base = get_vreg(b, src->u.memory.base);
@@ -564,9 +743,24 @@ static bool emit_mov(LLVMBackend* b, const FcIRInstruction* i) {
         // Use GEP for pointer arithmetic (treating as i8* for byte-level addressing)
         LLVMValueRef indices[] = { offset_val };
         LLVMValueRef ptr = LLVMBuildGEP2(b->builder, i8, base_ptr, indices, 1, "");
-        LLVMValueRef loaded = LLVMBuildLoad2(b->builder, i64, ptr, "");
+        LLVMValueRef loaded = LLVMBuildLoad2(b->builder, load_ty, ptr, "");
         
         if (dst->type == FC_OPERAND_VREG) {
+            if (i->opcode == FCIR_MOVSX || i->opcode == FCIR_MOVZX) {
+                LLVMTypeRef dst_ty = llvm_type_for_vreg_or_size(b, dst->u.vreg, 8);
+                if (LLVMGetTypeKind(LLVMTypeOf(loaded)) == LLVMIntegerTypeKind &&
+                    LLVMGetTypeKind(dst_ty) == LLVMIntegerTypeKind) {
+                    unsigned src_bits = LLVMGetIntTypeWidth(LLVMTypeOf(loaded));
+                    unsigned dst_bits = LLVMGetIntTypeWidth(dst_ty);
+                    if (src_bits < dst_bits) {
+                        loaded = (i->opcode == FCIR_MOVSX)
+                                     ? LLVMBuildSExt(b->builder, loaded, dst_ty, "")
+                                     : LLVMBuildZExt(b->builder, loaded, dst_ty, "");
+                    } else if (src_bits > dst_bits) {
+                        loaded = LLVMBuildTrunc(b->builder, loaded, dst_ty, "");
+                    }
+                }
+            }
             set_vreg(b, dst->u.vreg, loaded);
         }
         b->instruction_count++;
@@ -617,8 +811,23 @@ static bool emit_mov(LLVMBackend* b, const FcIRInstruction* i) {
     if (!src_val) { set_error(b, "MOV: null source"); return false; }
     
     if (dst->type == FC_OPERAND_VREG) {
-        uint8_t sz = dst->u.vreg.size > 0 ? dst->u.vreg.size : 8;
-        src_val = cast_to(b, src_val, llvm_int_type(b, sz));
+        LLVMTypeRef dst_ty = llvm_type_for_vreg_or_size(b, dst->u.vreg, 8);
+        if (i->opcode == FCIR_MOVSX || i->opcode == FCIR_MOVZX) {
+            if (LLVMGetTypeKind(LLVMTypeOf(src_val)) == LLVMIntegerTypeKind &&
+                LLVMGetTypeKind(dst_ty) == LLVMIntegerTypeKind) {
+                unsigned src_bits = LLVMGetIntTypeWidth(LLVMTypeOf(src_val));
+                unsigned dst_bits = LLVMGetIntTypeWidth(dst_ty);
+                if (src_bits < dst_bits) {
+                    src_val = (i->opcode == FCIR_MOVSX)
+                                  ? LLVMBuildSExt(b->builder, src_val, dst_ty, "")
+                                  : LLVMBuildZExt(b->builder, src_val, dst_ty, "");
+                } else if (src_bits > dst_bits) {
+                    src_val = LLVMBuildTrunc(b->builder, src_val, dst_ty, "");
+                }
+            }
+        } else {
+            src_val = cast_to(b, src_val, dst_ty);
+        }
         set_vreg(b, dst->u.vreg, src_val);
     }
     b->instruction_count++;
@@ -657,6 +866,17 @@ static bool emit_div(LLVMBackend* b, const FcIRInstruction* i) {
     if (!lhs || !rhs) return false;
     rhs = cast_to(b, rhs, LLVMTypeOf(lhs));
     LLVMValueRef res = LLVMBuildSDiv(b->builder, lhs, rhs, "");
+    if (i->operands[0].type == FC_OPERAND_VREG) set_vreg(b, i->operands[0].u.vreg, res);
+    b->instruction_count++;
+    return true;
+}
+
+static bool emit_mod(LLVMBackend* b, const FcIRInstruction* i) {
+    LLVMValueRef lhs = get_operand(b, &i->operands[0]);
+    LLVMValueRef rhs = get_operand(b, &i->operands[1]);
+    if (!lhs || !rhs) return false;
+    rhs = cast_to(b, rhs, LLVMTypeOf(lhs));
+    LLVMValueRef res = LLVMBuildSRem(b->builder, lhs, rhs, "");
     if (i->operands[0].type == FC_OPERAND_VREG) set_vreg(b, i->operands[0].u.vreg, res);
     b->instruction_count++;
     return true;
@@ -999,7 +1219,9 @@ static bool emit_call(LLVMBackend* b, const FcIRInstruction* i) {
     // Only store if the function returns a non-void type
     LLVMTypeRef ret_ty = LLVMGetReturnType(fn_ty);
     if (LLVMGetTypeKind(ret_ty) != LLVMVoidTypeKind) {
-        set_vreg(b, (VirtualReg){.id = 1000, .size = 8}, ret);
+        // IMPORTANT: Must set type to I64 to prevent truncation when storing
+        // The return value register v1000 should always be treated as 64-bit
+        set_vreg(b, (VirtualReg){.id = 1000, .type = VREG_TYPE_I64, .size = 8}, ret);
     }
     b->instruction_count++;
     return true;
@@ -1120,12 +1342,13 @@ static const RegInfo* find_register(const char* name, size_t len) {
 // Detect clobbered registers by scanning the asm template
 // Returns a bitmask of clobbered register families (bit N = family N is clobbered)
 // Also sets has_syscall if syscall instruction is found
-static uint32_t detect_asm_clobbers(const char* asm_template, bool* has_syscall, bool* has_memory_write) {
+static uint32_t detect_asm_clobbers(const char* asm_template, bool* has_syscall, bool* has_memory_write, bool* has_memory_read) {
     if (!asm_template) return 0;
     
     uint32_t clobber_mask = 0;
     *has_syscall = false;
     *has_memory_write = false;
+    *has_memory_read = false;
     
     const char* p = asm_template;
     while (*p) {
@@ -1230,7 +1453,8 @@ static uint32_t detect_asm_clobbers(const char* asm_template, bool* has_syscall,
 // Build clobber string from detected clobbers
 // Returns newly allocated string (caller must free)
 static char* build_clobber_string(uint32_t clobber_mask, bool has_syscall, bool has_memory_write,
-                                   const char** existing_clobbers, uint8_t existing_count) {
+                                   bool has_memory_read, const char** existing_clobbers, uint8_t existing_count) {
+    (void)has_memory_read;  // Reserved for future use
     // Map family index to LLVM register name
     static const char* family_names[] = {
         "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp",
@@ -1394,15 +1618,12 @@ static char* preprocess_asm_template(const char* input, int num_operands) {
 
 static bool emit_inline_asm(LLVMBackend* b, const FcIRInstruction* i) {
     // The inline asm data is stored as a pointer in operands[0].value.imm
-    // This is a bit of a hack but works for passing through the data
-    
     if (i->operand_count < 1) {
         b->instruction_count++;
         return true;
     }
     
     // Cast the immediate value back to the inline_asm struct pointer
-    // Note: This relies on the struct still being valid in memory
     struct {
         const char* asm_template;
         const char** output_constraints;
@@ -1414,6 +1635,8 @@ static bool emit_inline_asm(LLVMBackend* b, const FcIRInstruction* i) {
         uint8_t input_count;
         uint8_t clobber_count;
         bool is_volatile;
+        bool has_side_effects;
+        bool align_stack;
     } *asm_data = (void*)(uintptr_t)i->operands[0].u.immediate;
     
     if (!asm_data || !asm_data->asm_template) {
@@ -1423,38 +1646,54 @@ static bool emit_inline_asm(LLVMBackend* b, const FcIRInstruction* i) {
     
     LLVMTypeRef i64 = LLVMInt64TypeInContext(b->context);
     
-    // Detect clobbers from the asm template
+    // Detect clobbers from the asm template with enhanced LLVM 18+ support
     bool has_syscall = false;
     bool has_memory_write = false;
-    uint32_t detected_clobbers = detect_asm_clobbers(asm_data->asm_template, &has_syscall, &has_memory_write);
+    bool has_memory_read = false;
+    uint32_t detected_clobbers = detect_asm_clobbers(asm_data->asm_template, 
+                                                    &has_syscall, 
+                                                    &has_memory_write,
+                                                    &has_memory_read);
     
-    // Build constraint string
-    // Format: outputs,inputs,clobbers
-    // e.g., "=r,=a,r,m,~{memory},~{cc}"
+    // Build constraint string with modern LLVM 18+ constraints
     char constraint_str[1024] = {0};
     size_t pos = 0;
     
-    // Add output constraints
+    // Add output constraints first - CRITICAL FIX: add '=' prefix
     for (uint8_t j = 0; j < asm_data->output_count && pos < sizeof(constraint_str) - 10; j++) {
         if (j > 0) constraint_str[pos++] = ',';
-        const char* c = asm_data->output_constraints[j];
-        while (*c && pos < sizeof(constraint_str) - 10) {
-            constraint_str[pos++] = *c++;
+        
+        const char* constraint = asm_data->output_constraints[j];
+        if (!constraint || constraint[0] == '\0') {
+            // Default constraint for outputs - MUST have '=' prefix
+            pos += snprintf(constraint_str + pos, sizeof(constraint_str) - pos, "=r");
+        } else if (constraint[0] != '=') {
+            // Ensure output constraints have '=' prefix
+            pos += snprintf(constraint_str + pos, sizeof(constraint_str) - pos, "=%s", constraint);
+        } else {
+            // Already has '=' prefix
+            pos += snprintf(constraint_str + pos, sizeof(constraint_str) - pos, "%s", constraint);
         }
     }
     
     // Add input constraints
     for (uint8_t j = 0; j < asm_data->input_count && pos < sizeof(constraint_str) - 10; j++) {
-        if (pos > 0) constraint_str[pos++] = ',';
-        const char* c = asm_data->input_constraints[j];
-        while (*c && pos < sizeof(constraint_str) - 10) {
-            constraint_str[pos++] = *c++;
+        if ((asm_data->output_count > 0 || j > 0) && pos < sizeof(constraint_str) - 1) {
+            constraint_str[pos++] = ',';
+        }
+        
+        const char* constraint = asm_data->input_constraints[j];
+        if (!constraint || constraint[0] == '\0') {
+            pos += snprintf(constraint_str + pos, sizeof(constraint_str) - pos, "r");
+        } else {
+            pos += snprintf(constraint_str + pos, sizeof(constraint_str) - pos, "%s", constraint);
         }
     }
     
-    // Build and add detected clobbers
-    char* auto_clobbers = build_clobber_string(detected_clobbers, has_syscall, has_memory_write,
-                                                asm_data->clobbers, asm_data->clobber_count);
+    // Build and add detected clobbers with LLVM 18+ memory effects
+    char* auto_clobbers = build_clobber_string(detected_clobbers, has_syscall, 
+                                             has_memory_write, has_memory_read,
+                                             asm_data->clobbers, asm_data->clobber_count);
     if (auto_clobbers && pos < sizeof(constraint_str) - strlen(auto_clobbers) - 2) {
         if (pos > 0) constraint_str[pos++] = ',';
         strcpy(constraint_str + pos, auto_clobbers);
@@ -1466,7 +1705,7 @@ static bool emit_inline_asm(LLVMBackend* b, const FcIRInstruction* i) {
     
     constraint_str[pos] = '\0';
     
-    // Build function type based on inputs/outputs
+    // Build function type based on inputs/outputs (LLVM 18+ type system)
     uint8_t total_inputs = asm_data->input_count;
     LLVMTypeRef* param_types = NULL;
     if (total_inputs > 0) {
@@ -1476,17 +1715,26 @@ static bool emit_inline_asm(LLVMBackend* b, const FcIRInstruction* i) {
         }
     }
     
-    // Return type: void if no outputs, i64 if one output, struct if multiple
+    // Return type handling - CRITICAL FIX: properly handle outputs
     LLVMTypeRef ret_type;
     if (asm_data->output_count == 0) {
         ret_type = LLVMVoidTypeInContext(b->context);
     } else if (asm_data->output_count == 1) {
-        ret_type = i64;
+        // Get the correct type for the output vreg
+        if (asm_data->outputs && asm_data->outputs[0].type != VREG_TYPE_VOID) {
+            ret_type = llvm_type_for_vreg(b, asm_data->outputs[0].type);
+        } else {
+            ret_type = i64;
+        }
     } else {
         // Multiple outputs - use struct type
         LLVMTypeRef* out_types = malloc(asm_data->output_count * sizeof(LLVMTypeRef));
         for (uint8_t j = 0; j < asm_data->output_count; j++) {
-            out_types[j] = i64;
+            if (asm_data->outputs && asm_data->outputs[j].type != VREG_TYPE_VOID) {
+                out_types[j] = llvm_type_for_vreg(b, asm_data->outputs[j].type);
+            } else {
+                out_types[j] = i64;
+            }
         }
         ret_type = LLVMStructTypeInContext(b->context, out_types, asm_data->output_count, false);
         free(out_types);
@@ -1502,37 +1750,68 @@ static bool emit_inline_asm(LLVMBackend* b, const FcIRInstruction* i) {
         for (uint8_t j = 0; j < asm_data->input_count; j++) {
             if (asm_data->inputs) {
                 LLVMValueRef v = get_vreg(b, asm_data->inputs[j]);
-                args[j] = v ? v : LLVMConstInt(i64, 0, false);
+                if (!v) {
+                    v = LLVMConstInt(i64, 0, false);
+                }
+                args[j] = v;
             } else {
                 args[j] = LLVMConstInt(i64, 0, false);
             }
         }
     }
     
-    // Create inline asm with preprocessed template
-    // Preprocess to auto-escape $ for AT&T immediates (but keep operand refs)
+    // Create inline asm with preprocessed template (LLVM 18+ improvements)
     int num_operands = asm_data->output_count + asm_data->input_count;
     char* processed_template = preprocess_asm_template(asm_data->asm_template, num_operands);
     const char* final_template = processed_template ? processed_template : asm_data->asm_template;
     
+    // Use LLVM inline asm API (9 args for LLVM 21)
     LLVMValueRef ia = LLVMGetInlineAsm(fn_ty, 
         (char*)final_template, strlen(final_template),
         constraint_str, strlen(constraint_str),
-        asm_data->is_volatile, false, LLVMInlineAsmDialectATT, false);
+        asm_data->has_side_effects,
+        asm_data->align_stack,
+        LLVMInlineAsmDialectATT,
+        asm_data->is_volatile
+    );
     
     free(processed_template);  // Safe to free NULL
     
-    // Call the inline asm
-    LLVMValueRef res = LLVMBuildCall2(b->builder, fn_ty, ia, args, total_inputs, 
-                                       asm_data->output_count > 0 ? "asm_result" : "");
+    // Call the inline asm - only name the result if return type is non-void
+    const char* call_name = (LLVMGetTypeKind(ret_type) != LLVMVoidTypeKind) ? "asm_result" : "";
+    LLVMValueRef result = LLVMBuildCall2(b->builder, fn_ty, ia, args, total_inputs, call_name);
     
-    // Store outputs
+    // Handle memory effects using LLVMValueRef for metadata (LLVM 21 API)
+    if (has_memory_write || has_memory_read) {
+        LLVMValueRef md_args[1] = { NULL };
+        LLVMValueRef may_store_md = LLVMMDNodeInContext(b->context, md_args, 0);
+        LLVMSetMetadata(result, LLVMGetMDKindIDInContext(b->context, "may-store", 9), may_store_md);
+        
+        if (has_memory_read) {
+            LLVMValueRef may_load_md = LLVMMDNodeInContext(b->context, md_args, 0);
+            LLVMSetMetadata(result, LLVMGetMDKindIDInContext(b->context, "may-load", 8), may_load_md);
+        }
+    }
+    
+    // Store outputs with proper type handling - CRITICAL FIX: capture results
     if (asm_data->output_count == 1 && asm_data->outputs) {
-        set_vreg(b, asm_data->outputs[0], res);
+        if (LLVMGetTypeKind(ret_type) != LLVMVoidTypeKind) {
+            LLVMTypeRef target_type = llvm_type_for_vreg(b, asm_data->outputs[0].type);
+            if (LLVMTypeOf(result) != target_type) {
+                result = cast_to(b, result, target_type);
+            }
+            set_vreg(b, asm_data->outputs[0], result);
+        }
     } else if (asm_data->output_count > 1 && asm_data->outputs) {
         for (uint8_t j = 0; j < asm_data->output_count; j++) {
-            LLVMValueRef out_val = LLVMBuildExtractValue(b->builder, res, j, "asm_out");
-            set_vreg(b, asm_data->outputs[j], out_val);
+            LLVMValueRef out_val = LLVMBuildExtractValue(b->builder, result, j, "");
+            if (out_val) {
+                LLVMTypeRef target_type = llvm_type_for_vreg(b, asm_data->outputs[j].type);
+                if (LLVMTypeOf(out_val) != target_type) {
+                    out_val = cast_to(b, out_val, target_type);
+                }
+                set_vreg(b, asm_data->outputs[j], out_val);
+            }
         }
     }
     
@@ -1654,7 +1933,7 @@ static bool emit_atomic_rmw(LLVMBackend* b, const FcIRInstruction* i) {
 
 static bool emit_cmpxchg(LLVMBackend* b, const FcIRInstruction* i) {
     LLVMValueRef ptr = get_operand(b, &i->operands[0]);
-    LLVMValueRef expected = get_vreg(b, (VirtualReg){.id = 1, .size = 8}); // RAX
+    LLVMValueRef expected = get_vreg(b, (VirtualReg){.id = 1000, .size = 8}); // RAX
     LLVMValueRef newval = get_operand(b, &i->operands[1]);
     if (!ptr || !expected || !newval) return false;
     
@@ -1663,7 +1942,7 @@ static bool emit_cmpxchg(LLVMBackend* b, const FcIRInstruction* i) {
         LLVMAtomicOrderingSequentiallyConsistent, false);
     
     LLVMValueRef old_val = LLVMBuildExtractValue(b->builder, res, 0, "");
-    set_vreg(b, (VirtualReg){.id = 1, .size = 8}, old_val);
+    set_vreg(b, (VirtualReg){.id = 1000, .size = 8}, old_val);
     b->instruction_count++;
     return true;
 }
@@ -1780,6 +2059,8 @@ bool llvm_emit_instruction(LLVMBackend* b, const FcIRInstruction* i) {
             return emit_binary(b, i);
         case FCIR_IDIV:
             return emit_div(b, i);
+        case FCIR_IMOD:
+            return emit_mod(b, i);
         case FCIR_NEG: case FCIR_NOT: case FCIR_INC: case FCIR_DEC:
             return emit_unary(b, i);
         case FCIR_SHL: case FCIR_SHR: case FCIR_SAR: case FCIR_ROL: case FCIR_ROR:
@@ -1835,7 +2116,7 @@ bool llvm_emit_block(LLVMBackend* b, const FcIRBasicBlock* blk) {
     return true;
 }
 
-// Properly rewritten with defensive programming and O(n) complexity
+
 bool llvm_emit_function(LLVMBackend* b, const FcIRFunction* fn) {
     if (!b || !fn) return false;
     
@@ -1852,8 +2133,7 @@ bool llvm_emit_function(LLVMBackend* b, const FcIRFunction* fn) {
         set_error(b, "Failed to create i64 type");
         return false;
     }
-    
-    // Build parameter types array
+
     LLVMTypeRef* param_types = NULL;
     if (fn->parameter_count > 0) {
         param_types = malloc(fn->parameter_count * sizeof(LLVMTypeRef));
@@ -1866,7 +2146,6 @@ bool llvm_emit_function(LLVMBackend* b, const FcIRFunction* fn) {
         }
     }
     
-    // Create function
     LLVMTypeRef fn_ty = LLVMFunctionType(i64_ty, param_types, fn->parameter_count, false);
     LLVMValueRef func = LLVMAddFunction(b->module, fn->name, fn_ty);
     free(param_types);
@@ -1876,27 +2155,22 @@ bool llvm_emit_function(LLVMBackend* b, const FcIRFunction* fn) {
         set_error(b, "Failed to add function '%s'", fn->name);
         return false;
     }
+    if (strcmp(fn->name, "main") != 0 && strcmp(fn->name, "_start") != 0) {
+        LLVMAddAttributeAtIndex(func, LLVMAttributeFunctionIndex,
+            LLVMCreateEnumAttribute(b->context, 
+                LLVMGetEnumAttributeKindForName("inlinehint", 10), 0));
+    }
     
-    // ========================================================================
-    // Phase 1: Scan to determine requirements
-    // ========================================================================
-    
-    // Find maximum vreg ID and label ID used
     uint32_t max_vreg_id = 0;
     uint32_t max_label_id = 0;
     
     for (uint32_t i = 0; i < fn->block_count; i++) {
         const FcIRBasicBlock* blk = &fn->blocks[i];
-        
-        // Track max label ID
         if (blk->id > max_label_id) {
             max_label_id = blk->id;
         }
-        
         for (uint32_t j = 0; j < blk->instruction_count; j++) {
             const FcIRInstruction* instr = &blk->instructions[j];
-            
-            // Track max vreg ID
             for (uint8_t k = 0; k < instr->operand_count; k++) {
                 if (instr->operands[k].type == FC_OPERAND_VREG) {
                     uint32_t vreg_id = instr->operands[k].u.vreg.id;
@@ -1905,8 +2179,6 @@ bool llvm_emit_function(LLVMBackend* b, const FcIRFunction* fn) {
                     }
                 }
             }
-            
-            // Track label IDs from jumps
             if (instr->opcode == FCIR_JMP || 
                 (instr->opcode >= FCIR_JE && instr->opcode <= FCIR_JBE)) {
                 if (instr->operand_count > 0 && instr->operands[0].type == FC_OPERAND_LABEL) {
@@ -1918,8 +2190,6 @@ bool llvm_emit_function(LLVMBackend* b, const FcIRFunction* fn) {
             }
         }
     }
-    
-    // Allocate context with actual required sizes
     ctx = calloc(1, sizeof(LLVMFunctionContext));
     if (!ctx) {
         set_error(b, "Failed to allocate function context");
@@ -1929,8 +2199,6 @@ bool llvm_emit_function(LLVMBackend* b, const FcIRFunction* fn) {
     ctx->function = func;
     ctx->vreg_capacity = max_vreg_id + 1;
     ctx->label_count = max_label_id + 1;
-    
-    // Allocate vreg arrays only for what we need
     if (ctx->vreg_capacity > 0) {
         ctx->vreg_values = calloc(ctx->vreg_capacity, sizeof(LLVMValueRef));
         ctx->vreg_allocas = calloc(ctx->vreg_capacity, sizeof(LLVMValueRef));
@@ -2162,8 +2430,13 @@ bool llvm_emit_function(LLVMBackend* b, const FcIRFunction* fn) {
         snprintf(name, sizeof(name), "v%u.addr", vreg_id);
         
         // Use the vreg's type for the alloca, default to i64 if unknown
+        // IMPORTANT: ABI registers (v1000-v1006) must always be i64 to match
+        // the System V AMD64 calling convention
         LLVMTypeRef alloca_type;
-        if (ctx->vreg_types && ctx->vreg_types[vreg_id] != VREG_TYPE_VOID) {
+        if (vreg_id >= 1000 && vreg_id <= 1006) {
+            // ABI registers: rax(1000), rdi(1001), rsi(1002), rdx(1003), r8(1005), r9(1006), rcx(1007)
+            alloca_type = i64_ty;
+        } else if (ctx->vreg_types && ctx->vreg_types[vreg_id] != VREG_TYPE_VOID) {
             alloca_type = llvm_type_for_vreg(b, ctx->vreg_types[vreg_id]);
         } else {
             alloca_type = i64_ty;
@@ -2309,6 +2582,7 @@ cleanup:
         free(ctx->vreg_allocas);
         free(ctx->vreg_is_mutable);
         free(ctx->label_blocks);
+        free(ctx->vreg_types);
         free(ctx);
     }
     
@@ -2478,14 +2752,59 @@ static void emit_externals(LLVMBackend* b, const FcIRModule* m) {
         } else if (strcmp(name, "_fcx_itoa") == 0) {
             LLVMTypeRef p[] = {i64, ptr, i64};
             ft = LLVMFunctionType(i64, p, 3, false);
+        // Timing functions
+        } else if (strcmp(name, "_fcx_time_ns") == 0 ||
+                   strcmp(name, "_fcx_time_us") == 0 ||
+                   strcmp(name, "_fcx_time_ms") == 0 ||
+                   strcmp(name, "_fcx_cycles") == 0 ||
+                   strcmp(name, "_fcx_tock_ns") == 0 ||
+                   strcmp(name, "_fcx_tock_us") == 0 ||
+                   strcmp(name, "_fcx_tock_ms") == 0 ||
+                   strcmp(name, "_fcx_tock_cycles") == 0 ||
+                   strcmp(name, "_fcx_timer_start") == 0) {
+            // int64_t _fcx_time_*() - no args, returns i64
+            ft = LLVMFunctionType(i64, NULL, 0, false);
+        } else if (strcmp(name, "_fcx_timer_stop_ns") == 0 ||
+                   strcmp(name, "_fcx_timer_stop_us") == 0 ||
+                   strcmp(name, "_fcx_timer_stop_ms") == 0 ||
+                   strcmp(name, "_fcx_timer_stop_cycles") == 0 ||
+                   strcmp(name, "_fcx_timer_elapsed_ns") == 0) {
+            // int64_t _fcx_timer_stop_*(int64_t id)
+            LLVMTypeRef p[] = {i64};
+            ft = LLVMFunctionType(i64, p, 1, false);
+        } else if (strcmp(name, "_fcx_tick") == 0) {
+            // void _fcx_tick()
+            ft = LLVMFunctionType(void_ty, NULL, 0, false);
+        } else if (strcmp(name, "_fcx_timer_reset") == 0) {
+            // void _fcx_timer_reset(int64_t id)
+            LLVMTypeRef p[] = {i64};
+            ft = LLVMFunctionType(void_ty, p, 1, false);
+        } else if (strcmp(name, "_fcx_print_timing") == 0) {
+            // void _fcx_print_timing(const char* label, int64_t ns)
+            LLVMTypeRef p[] = {ptr, i64};
+            ft = LLVMFunctionType(void_ty, p, 2, false);
         } else {
-            // Default: generic function with 6 i64 args returning i64
+            // Default: Check if function already exists (from C imports)
+            // If it does, use that declaration instead of creating a generic one
+            LLVMValueRef existing = LLVMGetNamedFunction(b->module, name);
+            if (existing) {
+                b->external_funcs[i] = existing;
+                continue;
+            }
+            
+            // Otherwise create generic function with 6 i64 args returning i64
             LLVMTypeRef p[] = {i64, i64, i64, i64, i64, i64};
             ft = LLVMFunctionType(i64, p, 6, false);
         }
         
-        b->external_funcs[i] = LLVMAddFunction(b->module, name, ft);
-        LLVMSetLinkage(b->external_funcs[i], LLVMExternalLinkage);
+        // Check if function already exists before adding
+        LLVMValueRef existing = LLVMGetNamedFunction(b->module, name);
+        if (existing) {
+            b->external_funcs[i] = existing;
+        } else {
+            b->external_funcs[i] = LLVMAddFunction(b->module, name, ft);
+            LLVMSetLinkage(b->external_funcs[i], LLVMExternalLinkage);
+        }
     }
 }
 
@@ -2517,7 +2836,40 @@ static void emit_start(LLVMBackend* b) {
     LLVMBuildUnreachable(b->builder);
 }
 
+static void emit_global_vars(LLVMBackend* b, const FcIRModule* m) {
+    if (!m->global_var_count) return;
+    
+    b->global_vars = calloc(m->global_var_count, sizeof(LLVMValueRef));
+    b->global_var_count = m->global_var_count;
+    
+    LLVMTypeRef i64 = LLVMInt64TypeInContext(b->context);
+    
+    for (uint32_t i = 0; i < m->global_var_count; i++) {
+        const FcIRGlobalVar* gv = &m->global_vars[i];
+        
+        // Create global variable
+        LLVMValueRef g = LLVMAddGlobal(b->module, i64, gv->name);
+        
+        // Set initializer
+        LLVMValueRef init_val = LLVMConstInt(i64, gv->has_init ? gv->init_value : 0, true);
+        LLVMSetInitializer(g, init_val);
+        
+        // Set properties
+        if (gv->is_const) {
+            LLVMSetGlobalConstant(g, true);
+        }
+        LLVMSetLinkage(g, LLVMInternalLinkage);
+        
+        b->global_vars[i] = g;
+    }
+}
+
 bool llvm_emit_module(LLVMBackend* b, const FcIRModule* m) {
+    return llvm_emit_module_with_imports(b, m, NULL, NULL, false);
+}
+
+bool llvm_emit_module_with_imports(LLVMBackend* b, const FcIRModule* m, 
+                                    CImportContext* c_ctx, CImportContext* cpp_ctx, bool verbose) {
     if (!b || !m) return false;
     llvm_backend_reset(b);
     b->fc_module = m;
@@ -2525,6 +2877,33 @@ bool llvm_emit_module(LLVMBackend* b, const FcIRModule* m) {
     LLVMSetTarget(b->module, b->config.target_triple);
     LLVMSetDataLayout(b->module, LLVMCopyStringRepOfTargetData(b->target_data));
     
+    // Inject C imports FIRST - before declaring externals
+    // This ensures external function declarations have correct signatures from C headers
+    if (c_ctx) {
+        if (verbose) {
+            printf("Processing C imports...\n");
+        }
+        if (!llvm_inject_c_imports(b, c_ctx)) {
+            fprintf(stderr, "Warning: Failed to inject C imports: %s\n",
+                    llvm_backend_get_error(b));
+        } else if (verbose) {
+            printf("Injected C function declarations from headers\n");
+        }
+    }
+    
+    if (cpp_ctx) {
+        if (verbose) {
+            printf("Processing C++ imports...\n");
+        }
+        if (!llvm_inject_cpp_imports(b, cpp_ctx)) {
+            fprintf(stderr, "Warning: Failed to inject C++ imports: %s\n",
+                    llvm_backend_get_error(b));
+        } else if (verbose) {
+            printf("Injected C++ function declarations from headers\n");
+        }
+    }
+    
+    emit_global_vars(b, m);
     emit_strings(b, m);
     emit_externals(b, m);
     
@@ -2661,7 +3040,7 @@ void llvm_print_statistics(const LLVMBackend* b) {
 bool llvm_link_executable(const char* obj, const char* out) {
     if (!obj || !out) return false;
     
-    char cmd[2048];
+    char cmd[4096];
     
     // Check if runtime objects exist
     const char* runtime_paths[] = {
@@ -2685,21 +3064,23 @@ bool llvm_link_executable(const char* obj, const char* out) {
         }
     }
     
+    // Always link with libc for C import support and standard library functions
+    // This enables using printf, malloc, math functions, etc. from C imports
     if (has_runtime && runtime_objs) {
-        // Link with runtime and libc (for memcpy, strlen, etc.)
+        // Link with runtime and libc (for memcpy, strlen, C imports, etc.)
         snprintf(cmd, sizeof(cmd), 
-            "ld.lld -o %s -e _start --dynamic-linker /lib64/ld-linux-x86-64.so.2 %s %s -lc 2>/dev/null || "
-            "lld -flavor gnu -o %s -e _start --dynamic-linker /lib64/ld-linux-x86-64.so.2 %s %s -lc 2>/dev/null || "
-            "ld -o %s -e _start --dynamic-linker /lib64/ld-linux-x86-64.so.2 %s %s -lc",
+            "ld.lld -o %s -e _start --dynamic-linker /lib64/ld-linux-x86-64.so.2 %s %s -lc -lm 2>/dev/null || "
+            "lld -flavor gnu -o %s -e _start --dynamic-linker /lib64/ld-linux-x86-64.so.2 %s %s -lc -lm 2>/dev/null || "
+            "ld -o %s -e _start --dynamic-linker /lib64/ld-linux-x86-64.so.2 %s %s -lc -lm",
             out, obj, runtime_objs,
             out, obj, runtime_objs,
             out, obj, runtime_objs);
     } else {
-        // Link without runtime (standalone executable - no libc)
+        // Link without runtime but with libc for C import support
         snprintf(cmd, sizeof(cmd), 
-            "ld.lld -o %s -e _start %s 2>/dev/null || "
-            "lld -flavor gnu -o %s -e _start %s 2>/dev/null || "
-            "ld -o %s -e _start %s",
+            "ld.lld -o %s -e _start --dynamic-linker /lib64/ld-linux-x86-64.so.2 %s -lc -lm 2>/dev/null || "
+            "lld -flavor gnu -o %s -e _start --dynamic-linker /lib64/ld-linux-x86-64.so.2 %s -lc -lm 2>/dev/null || "
+            "ld -o %s -e _start --dynamic-linker /lib64/ld-linux-x86-64.so.2 %s -lc -lm",
             out, obj, out, obj, out, obj);
     }
     
@@ -2743,4 +3124,101 @@ bool llvm_compile_shared_library(LLVMBackend* b, const char* out) {
     unlink(obj);
     if (!ok) set_error(b, "Shared library linking failed");
     return ok;
+}
+
+
+// ============================================================================
+// C Import Integration - Link C library LLVM IR into FCX module
+// ============================================================================
+
+// Parse LLVM IR text and link it into our module
+bool llvm_link_ir_text(LLVMBackend* backend, const char* ir_text, size_t ir_len) {
+    if (!backend || !backend->module || !ir_text || ir_len == 0) return true;
+    
+    fprintf(stderr, "DEBUG: Linking IR text (%zu bytes) into module\n", ir_len);
+    
+    // Create a memory buffer from the IR text
+    LLVMMemoryBufferRef mem_buf = LLVMCreateMemoryBufferWithMemoryRangeCopy(
+        ir_text, ir_len, "c_import_ir"
+    );
+    if (!mem_buf) {
+        set_error(backend, "Failed to create memory buffer for C import IR");
+        return false;
+    }
+    
+    // Parse the IR into a new module
+    LLVMModuleRef c_module = NULL;
+    char* error_msg = NULL;
+    
+    if (LLVMParseIRInContext(backend->context, mem_buf, &c_module, &error_msg)) {
+        set_error(backend, "Failed to parse C import IR: %s", error_msg ? error_msg : "unknown");
+        if (error_msg) LLVMDisposeMessage(error_msg);
+        return false;
+    }
+    
+    // Check if sqrt exists in the C module before linking
+    LLVMValueRef sqrt_in_c = LLVMGetNamedFunction(c_module, "sqrt");
+    if (sqrt_in_c) {
+        fprintf(stderr, "DEBUG: sqrt found in C import module before linking\n");
+    } else {
+        fprintf(stderr, "DEBUG: sqrt NOT found in C import module before linking\n");
+    }
+    
+    fprintf(stderr, "DEBUG: Parsed C import module, linking...\n");
+    
+    // Link the C module into our main module
+    // LLVMLinkModules2 destroys the source module on success
+    if (LLVMLinkModules2(backend->module, c_module)) {
+        set_error(backend, "Failed to link C import module");
+        return false;
+    }
+    
+    fprintf(stderr, "DEBUG: Successfully linked C import module\n");
+    
+    // Verify the function exists after linking
+    LLVMValueRef sqrt_fn = LLVMGetNamedFunction(backend->module, "sqrt");
+    if (sqrt_fn) {
+        fprintf(stderr, "DEBUG: sqrt function found after linking\n");
+    } else {
+        fprintf(stderr, "DEBUG: sqrt function NOT found after linking\n");
+    }
+    
+    // List all functions in the module
+    fprintf(stderr, "DEBUG: Functions in module after linking:\n");
+    LLVMValueRef fn = LLVMGetFirstFunction(backend->module);
+    while (fn) {
+        fprintf(stderr, "  - %s\n", LLVMGetValueName(fn));
+        fn = LLVMGetNextFunction(fn);
+    }
+    
+    return true;
+}
+
+// Inject C imports by getting LLVM IR from Zig and linking it
+bool llvm_inject_c_imports(LLVMBackend* backend, CImportContext* c_ctx) {
+    if (!backend || !backend->module || !c_ctx) return true;
+    
+    // Process the C imports (generates LLVM IR via clang)
+    if (!fcx_c_import_process(c_ctx)) {
+        set_error(backend, "Failed to process C imports: %s", 
+                  fcx_c_import_get_error(c_ctx));
+        return false;
+    }
+    
+    // Get the generated LLVM IR
+    const char* llvm_ir = fcx_c_import_get_llvm_ir(c_ctx);
+    size_t ir_size = fcx_c_import_get_llvm_ir_size(c_ctx);
+    
+    if (!llvm_ir || ir_size == 0) {
+        // No IR generated - might just be declarations, that's OK
+        return true;
+    }
+    
+    // Link the IR into our module
+    return llvm_link_ir_text(backend, llvm_ir, ir_size);
+}
+
+// Inject C++ imports (same as C for now)
+bool llvm_inject_cpp_imports(LLVMBackend* backend, CImportContext* cpp_ctx) {
+    return llvm_inject_c_imports(backend, cpp_ctx);
 }

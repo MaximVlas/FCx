@@ -1,0 +1,8 @@
+// Test C import functionality
+#importc <stdio.h>
+
+fn main() -> i64 {
+    // For now, just test that the directive is recognized
+    // Full integration will come later
+    ret 42
+}

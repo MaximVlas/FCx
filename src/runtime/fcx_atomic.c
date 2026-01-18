@@ -1,9 +1,5 @@
 #include "fcx_runtime.h"
 
-// ============================================================================
-// Hardware-Level Atomic Operations (Task 7.3)
-// ============================================================================
-
 // Atomic load (! operator)
 // Maps to simple MOV for aligned access, or LOCK MOV for unaligned
 uint64_t fcx_atomic_load(volatile uint64_t* ptr) {

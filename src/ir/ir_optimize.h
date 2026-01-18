@@ -13,6 +13,12 @@ typedef struct {
 // Constant folding pass
 bool opt_constant_folding(FcxIRFunction* function);
 
+// Algebraic simplification pass
+bool opt_algebraic_simplification(FcxIRFunction* function);
+
+// Strength reduction pass
+bool opt_strength_reduction(FcxIRFunction* function);
+
 // Dead code elimination pass
 bool opt_dead_code_elimination(FcxIRFunction* function);
 
@@ -29,8 +35,10 @@ bool opt_leak_detection(FcxIRFunction* function);
 
 // Run all optimization passes on a function
 bool ir_optimize_function(FcxIRFunction* function);
+bool ir_optimize_function_with_level(FcxIRFunction* function, int opt_level);
 
 // Run all optimization passes on a module
 bool ir_optimize_module(FcxIRModule* module);
+bool ir_optimize_module_with_level(FcxIRModule* module, int opt_level);
 
 #endif // IR_OPTIMIZE_H

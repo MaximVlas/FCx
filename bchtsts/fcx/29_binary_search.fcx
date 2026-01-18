@@ -1,5 +1,6 @@
 // Benchmark: Binary search simulation
 // Tests: Divide and conquer, comparisons
+// Simulates searching a sorted array where arr[i] = i
 
 fn binary_search(target, size) -> i64 {
     let low := 0
@@ -7,19 +8,20 @@ fn binary_search(target, size) -> i64 {
     let steps := 0
     
     while low <= high {
-        let mid := (low + high) / 2
+        let mid := low + (high - low) / 2  // Avoid overflow
+        let arr_mid := mid  // Simulated array access: arr[mid] = mid
         steps := steps + 1
         
-        if mid == target {
+        if arr_mid == target {
             ret steps
         }
-        if mid < target {
+        if arr_mid < target {
             low := mid + 1
         } else {
             high := mid - 1
         }
     }
-    ret steps
+    ret steps  // Not found
 }
 
 fn main() -> i64 {
@@ -29,9 +31,7 @@ fn main() -> i64 {
     let i := 0
     
     while i < iterations {
-        let target := i * 7
-        let div := target / size
-        target := target - div * size
+        let target := (i * 7) /% size
         total := total + binary_search(target, size)
         i := i + 1
     }

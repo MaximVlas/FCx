@@ -3,6 +3,7 @@
  */
 
 #include "preprocessor.h"
+#include "c_import_zig.h"
 #include "../lexer/lexer.h"
 #include "../parser/parser.h"
 
@@ -16,6 +17,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+// Global C import context (shared across preprocessing)
+static CImportContext *g_c_import_ctx = NULL;
+static CImportContext *g_cpp_import_ctx = NULL;
 
 // ============================================================================
 // Internal helpers
@@ -1115,6 +1120,182 @@ static bool pp_handle_line(Preprocessor *pp) {
 }
 
 // ============================================================================
+// C/C++ Import handlers
+// ============================================================================
+
+static bool pp_handle_importc(Preprocessor *pp) {
+    pp_skip_hspace(pp);
+    
+    bool is_system = false;
+    char *header = NULL;
+    
+    if (*pp->current == '"') {
+        header = pp_read_string(pp, '"');
+        is_system = false;
+    } else if (*pp->current == '<') {
+        pp->current++; // skip <
+        const char *start = pp->current;
+        while (*pp->current && *pp->current != '>' && *pp->current != '\n') {
+            pp->current++;
+        }
+        size_t len = pp->current - start;
+        header = malloc(len + 1);
+        if (header) {
+            memcpy(header, start, len);
+            header[len] = '\0';
+        }
+        if (*pp->current == '>') pp->current++;
+        is_system = true;
+    } else {
+        pp_error(pp, "Expected header name after #importc");
+        return false;
+    }
+    
+    if (!header) {
+        pp_error(pp, "Invalid #importc header");
+        return false;
+    }
+    
+    // Initialize C import context if needed
+    if (!g_c_import_ctx) {
+        g_c_import_ctx = fcx_c_import_create();
+        if (!g_c_import_ctx) {
+            pp_error(pp, "Failed to create C import context");
+            free(header);
+            return false;
+        }
+        // Add standard include paths
+        fcx_c_import_add_include_path(g_c_import_ctx, "/usr/include");
+        fcx_c_import_add_include_path(g_c_import_ctx, "/usr/local/include");
+    }
+    
+    // Queue the header for import
+    if (!fcx_c_import_header(g_c_import_ctx, header, is_system)) {
+        pp_error(pp, "Failed to queue C header '%s' for import", header);
+        free(header);
+        return false;
+    }
+    
+    // Emit a comment marker so we know C imports were used
+    char marker[256];
+    snprintf(marker, sizeof(marker), "// [C IMPORT: %s]\n", header);
+    pp_output(pp, marker, 0);
+    
+    free(header);
+    return true;
+}
+
+static bool pp_handle_importcpp(Preprocessor *pp) {
+    pp_skip_hspace(pp);
+    
+    bool is_system = false;
+    char *header = NULL;
+    
+    if (*pp->current == '"') {
+        header = pp_read_string(pp, '"');
+        is_system = false;
+    } else if (*pp->current == '<') {
+        pp->current++; // skip <
+        const char *start = pp->current;
+        while (*pp->current && *pp->current != '>' && *pp->current != '\n') {
+            pp->current++;
+        }
+        size_t len = pp->current - start;
+        header = malloc(len + 1);
+        if (header) {
+            memcpy(header, start, len);
+            header[len] = '\0';
+        }
+        if (*pp->current == '>') pp->current++;
+        is_system = true;
+    } else {
+        pp_error(pp, "Expected header name after #importcpp");
+        return false;
+    }
+    
+    if (!header) {
+        pp_error(pp, "Invalid #importcpp header");
+        return false;
+    }
+    
+    // Initialize C++ import context if needed
+    if (!g_cpp_import_ctx) {
+        g_cpp_import_ctx = fcx_c_import_create();
+        if (!g_cpp_import_ctx) {
+            pp_error(pp, "Failed to create C++ import context");
+            free(header);
+            return false;
+        }
+        // Add standard C++ include paths
+        fcx_c_import_add_include_path(g_cpp_import_ctx, "/usr/include");
+        fcx_c_import_add_include_path(g_cpp_import_ctx, "/usr/include/c++/14");
+        fcx_c_import_add_include_path(g_cpp_import_ctx, "/usr/include/c++/13");
+        fcx_c_import_add_include_path(g_cpp_import_ctx, "/usr/include/c++/12");
+        fcx_c_import_add_include_path(g_cpp_import_ctx, "/usr/local/include");
+    }
+    
+    // Queue the header for import
+    if (!fcx_c_import_header(g_cpp_import_ctx, header, is_system)) {
+        pp_error(pp, "Failed to queue C++ header '%s' for import", header);
+        free(header);
+        return false;
+    }
+    
+    // Emit a comment marker so we know C++ imports were used
+    char marker[256];
+    snprintf(marker, sizeof(marker), "// [C++ IMPORT: %s]\n", header);
+    pp_output(pp, marker, 0);
+    
+    free(header);
+    return true;
+}
+
+// Get the C import context (for code generation)
+CImportContext *preprocessor_get_c_import_context(void) {
+    return g_c_import_ctx;
+}
+
+// Get the C++ import context (for code generation)
+CImportContext *preprocessor_get_cpp_import_context(void) {
+    return g_cpp_import_ctx;
+}
+
+// Process all pending C/C++ imports
+bool preprocessor_process_c_imports(void) {
+    bool success = true;
+    
+    if (g_c_import_ctx) {
+        if (!fcx_c_import_process(g_c_import_ctx)) {
+            fprintf(stderr, "Warning: Failed to process C imports: %s\n",
+                    fcx_c_import_get_error(g_c_import_ctx));
+            success = false;
+        }
+    }
+    
+    if (g_cpp_import_ctx) {
+        if (!fcx_c_import_process(g_cpp_import_ctx)) {
+            fprintf(stderr, "Warning: Failed to process C++ imports: %s\n",
+                    fcx_c_import_get_error(g_cpp_import_ctx));
+            success = false;
+        }
+    }
+    
+    return success;
+}
+
+// Cleanup C/C++ import contexts
+void preprocessor_cleanup_c_imports(void) {
+    if (g_c_import_ctx) {
+        fcx_c_import_destroy(g_c_import_ctx);
+        g_c_import_ctx = NULL;
+    }
+    if (g_cpp_import_ctx) {
+        fcx_c_import_destroy(g_cpp_import_ctx);
+        g_cpp_import_ctx = NULL;
+    }
+}
+
+// ============================================================================
 // Macro expansion
 // ============================================================================
 
@@ -1414,6 +1595,20 @@ static bool pp_process_directive(Preprocessor *pp) {
             return true;
         }
         return pp_handle_line(pp);
+    }
+    else if (dir_len == 7 && strncmp(dir_start, "importc", 7) == 0) {
+        if (!pp_is_active(pp)) {
+            pp_skip_to_eol(pp);
+            return true;
+        }
+        return pp_handle_importc(pp);
+    }
+    else if (dir_len == 9 && strncmp(dir_start, "importcpp", 9) == 0) {
+        if (!pp_is_active(pp)) {
+            pp_skip_to_eol(pp);
+            return true;
+        }
+        return pp_handle_importcpp(pp);
     }
     else {
         // Unknown directive
@@ -1764,7 +1959,7 @@ Preprocessor *preprocessor_create(const char *std_path) {
     
     // Define built-in macros
     preprocessor_define(pp, "__FCX__", "1");
-    preprocessor_define(pp, "__FCX_VERSION__", "\"0.2.1\"");
+    preprocessor_define(pp, "__FCX_VERSION__", "\"0.2.12\"");
     
     // Platform macros
 #ifdef __linux__

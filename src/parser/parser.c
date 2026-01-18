@@ -2504,12 +2504,60 @@ Expr *parse_syscall_operation(Parser *parser, TokenKind op) {
 //   The ${...} is replaced with $0, $1, etc. and constraints are auto-generated
 //
 
+// Helper: Check if a variable reference is a destination (output) in AT&T syntax
+// In AT&T syntax, destination is the LAST operand
+// Returns true if the ${var} at position var_pos is a destination operand
+static bool is_asm_destination(const char* template, const char* var_pos) {
+    // Find the instruction this variable belongs to
+    // Look backwards for newline or start of string
+    const char* line_start = var_pos;
+    while (line_start > template && line_start[-1] != '\n') {
+        line_start--;
+    }
+    
+    // Skip leading whitespace
+    while (*line_start == ' ' || *line_start == '\t') line_start++;
+    
+    // Find end of line (newline or end of string)
+    const char* line_end = var_pos;
+    while (*line_end && *line_end != '\n') line_end++;
+    
+    // Check if there's a comma AFTER this variable reference on the same line
+    // If there's no comma after, this is the last operand (destination in AT&T)
+    const char* after_var = var_pos;
+    // Skip past ${varname}
+    while (*after_var && *after_var != '}') after_var++;
+    if (*after_var == '}') after_var++;
+    
+    // Look for comma after the variable
+    while (after_var < line_end) {
+        if (*after_var == ',') {
+            return false;  // There's another operand after this one, so this is a source
+        }
+        after_var++;
+    }
+    
+    // No comma after - check if this line has any operands (not just a label or directive)
+    // Look for instruction-like patterns (mov, add, etc.)
+    const char* p = line_start;
+    while (p < var_pos && *p != ' ' && *p != '\t' && *p != ':') p++;
+    
+    // If we found a colon, it's a label - not an instruction
+    if (*p == ':') return false;
+    
+    // This is the last operand on an instruction line - it's a destination
+    return true;
+}
+
 // Helper: Extract variable references from asm template
 // Returns processed template with ${var} replaced by $0, $1, etc.
 // Populates var_names array with variable names found
-static char* extract_asm_variables(const char* template, char*** var_names, size_t* var_count) {
+// is_output array indicates which variables are outputs (destinations)
+static char* extract_asm_variables_ex(const char* template, char*** var_names, 
+                                       bool** is_output, size_t* var_count) {
     *var_count = 0;
     *var_names = NULL;
+    *is_output = NULL;
     
     if (!template) return NULL;
     
@@ -2532,16 +2580,30 @@ static char* extract_asm_variables(const char* template, char*** var_names, size
         return fcx_strdup(template);
     }
     
-    // Allocate var_names array
+    // Allocate arrays
     *var_names = malloc(count * sizeof(char*));
-    if (!*var_names) return NULL;
+    *is_output = malloc(count * sizeof(bool));
+    if (!*var_names || !*is_output) {
+        free(*var_names);
+        free(*is_output);
+        *var_names = NULL;
+        *is_output = NULL;
+        return NULL;
+    }
+    
+    // Initialize is_output to false
+    for (size_t i = 0; i < count; i++) {
+        (*is_output)[i] = false;
+    }
     
     // Second pass: extract names and build new template
     size_t template_len = strlen(template);
-    char* result = malloc(template_len + count * 10 + 1); // Extra space for $N replacements
+    char* result = malloc(template_len + count * 10 + 1);
     if (!result) {
         free(*var_names);
+        free(*is_output);
         *var_names = NULL;
+        *is_output = NULL;
         return NULL;
     }
     
@@ -2552,10 +2614,14 @@ static char* extract_asm_variables(const char* template, char*** var_names, size
     while (*p) {
         if (p[0] == '$' && p[1] == '{') {
             // Found ${varname}
+            const char* var_start = p;
             p += 2; // Skip ${
             const char* name_start = p;
             while (*p && *p != '}') p++;
             size_t name_len = p - name_start;
+            
+            // Check if this is a destination operand
+            bool is_dest = is_asm_destination(template, var_start);
             
             // Check if we already have this variable
             int existing_idx = -1;
@@ -2563,26 +2629,27 @@ static char* extract_asm_variables(const char* template, char*** var_names, size
                 if (strlen((*var_names)[i]) == name_len && 
                     strncmp((*var_names)[i], name_start, name_len) == 0) {
                     existing_idx = (int)i;
+                    // If any use is a destination, mark as output
+                    if (is_dest) (*is_output)[i] = true;
                     break;
                 }
             }
             
             if (existing_idx >= 0) {
-                // Reuse existing variable index
                 dst += sprintf(dst, "$%d", existing_idx);
             } else {
-                // New variable
                 char* name = malloc(name_len + 1);
                 if (name) {
                     memcpy(name, name_start, name_len);
                     name[name_len] = '\0';
                     (*var_names)[var_idx] = name;
+                    (*is_output)[var_idx] = is_dest;
                     dst += sprintf(dst, "$%d", (int)var_idx);
                     var_idx++;
                 }
             }
             
-            if (*p == '}') p++; // Skip }
+            if (*p == '}') p++;
         } else {
             *dst++ = *p++;
         }
@@ -2695,10 +2762,11 @@ Expr *parse_inline_asm(Parser *parser) {
     return NULL;
   }
   
-  // Process template for ${varname} references
+  // Process template for ${varname} references with output detection
   char** var_names = NULL;
+  bool* is_output = NULL;
   size_t var_count = 0;
-  char* processed_template = extract_asm_variables(raw_template, &var_names, &var_count);
+  char* processed_template = extract_asm_variables_ex(raw_template, &var_names, &is_output, &var_count);
   free(raw_template);
   
   if (!processed_template) {
@@ -2708,23 +2776,46 @@ Expr *parse_inline_asm(Parser *parser) {
   
   expr->data.inline_asm.asm_template = processed_template;
   
-  // Create input expressions for each variable reference
+  // Separate variables into outputs and inputs based on detection
   if (var_count > 0) {
-    expr->data.inline_asm.input_constraints = malloc(var_count * sizeof(char*));
-    expr->data.inline_asm.input_exprs = malloc(var_count * sizeof(Expr*));
-    
-    if (!expr->data.inline_asm.input_constraints || !expr->data.inline_asm.input_exprs) {
-      for (size_t i = 0; i < var_count; i++) free(var_names[i]);
-      free(var_names);
-      free_expr(expr);
-      return NULL;
+    // Count outputs and inputs
+    size_t output_count = 0;
+    size_t input_count = 0;
+    for (size_t i = 0; i < var_count; i++) {
+      if (is_output[i]) output_count++;
+      else input_count++;
     }
     
+    // Allocate arrays for outputs
+    if (output_count > 0) {
+      expr->data.inline_asm.output_constraints = malloc(output_count * sizeof(char*));
+      expr->data.inline_asm.output_exprs = malloc(output_count * sizeof(Expr*));
+      if (!expr->data.inline_asm.output_constraints || !expr->data.inline_asm.output_exprs) {
+        for (size_t i = 0; i < var_count; i++) free(var_names[i]);
+        free(var_names);
+        free(is_output);
+        free_expr(expr);
+        return NULL;
+      }
+    }
+    
+    // Allocate arrays for inputs
+    if (input_count > 0) {
+      expr->data.inline_asm.input_constraints = malloc(input_count * sizeof(char*));
+      expr->data.inline_asm.input_exprs = malloc(input_count * sizeof(Expr*));
+      if (!expr->data.inline_asm.input_constraints || !expr->data.inline_asm.input_exprs) {
+        for (size_t i = 0; i < var_count; i++) free(var_names[i]);
+        free(var_names);
+        free(is_output);
+        free_expr(expr);
+        return NULL;
+      }
+    }
+    
+    // Populate outputs and inputs
+    size_t out_idx = 0;
+    size_t in_idx = 0;
     for (size_t i = 0; i < var_count; i++) {
-      // Default constraint: "r" (any general register)
-      expr->data.inline_asm.input_constraints[i] = fcx_strdup("r");
-      
-      // Create identifier expression for the variable
       Expr* var_expr = allocate_expr(EXPR_IDENTIFIER);
       if (var_expr) {
         var_expr->line = expr->line;
@@ -2732,12 +2823,26 @@ Expr *parse_inline_asm(Parser *parser) {
         var_expr->data.identifier = var_names[i]; // Transfer ownership
       } else {
         free(var_names[i]);
+        continue;
       }
-      expr->data.inline_asm.input_exprs[i] = var_expr;
+      
+      if (is_output[i]) {
+        // Output constraint: "=r" (any general register, output)
+        expr->data.inline_asm.output_constraints[out_idx] = fcx_strdup("=r");
+        expr->data.inline_asm.output_exprs[out_idx] = var_expr;
+        out_idx++;
+      } else {
+        // Input constraint: "r" (any general register)
+        expr->data.inline_asm.input_constraints[in_idx] = fcx_strdup("r");
+        expr->data.inline_asm.input_exprs[in_idx] = var_expr;
+        in_idx++;
+      }
     }
     
-    expr->data.inline_asm.input_count = var_count;
-    free(var_names); // Array freed, strings transferred to input_exprs
+    expr->data.inline_asm.output_count = out_idx;
+    expr->data.inline_asm.input_count = in_idx;
+    free(var_names);
+    free(is_output);
   }
 
   // Parse optional output constraints: "=r", "=a", etc.

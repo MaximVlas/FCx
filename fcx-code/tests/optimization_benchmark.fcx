@@ -1,0 +1,35 @@
+// Benchmark to test optimization effectiveness
+fn main() -> i64 {
+    // Constants that should be folded
+    let result1 := 123 + 456 * 789 - 100 / 4
+    let result2 := (1 << 10) | (0xFF & 0x0F)
+    let result3 := 42 * 8 + 16 / 2 - 7 /% 3
+    
+    // Algebraic simplifications
+    let x := 1000
+    let identity1 := x + 0 * 999 + x * 1
+    let identity2 := x & 0xFFFFFFFF | 0
+    let zero_result := x - x ^ 0
+    
+    // Strength reductions
+    let mul_power2 := x * 16      // Should become x << 4
+    let div_power2 := x / 32      // Should become x >> 5
+    let mod_power2 := x /% 64     // Should become x & 63
+    
+    // Complex expression that should be heavily optimized
+    let complex := ((x + 0) * 1 - 0) * 4 + (x / 2) - (x /% 8)
+    
+    // Print results
+    print>result1
+    print>result2
+    print>result3
+    print>identity1
+    print>identity2
+    print>zero_result
+    print>mul_power2
+    print>div_power2
+    print>mod_power2
+    print>complex
+    
+    ret 0
+}

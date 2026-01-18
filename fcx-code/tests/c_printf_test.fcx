@@ -1,0 +1,11 @@
+// Test calling C library function printf
+#importc <stdio.h>
+
+fn main() -> i64 {
+    // Call printf from libc
+    // printf("Hello from FCX via C import!\n")
+    
+    // For now just return success
+    // Full function call support coming next
+    ret 0
+}

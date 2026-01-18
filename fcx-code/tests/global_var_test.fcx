@@ -1,0 +1,31 @@
+// Test global variables
+let counter := 0
+let max_value := 100
+
+fn increment() -> i64 {
+    counter = counter + 1
+    ret counter
+}
+
+fn get_max() -> i64 {
+    ret max_value
+}
+
+fn main() -> i64 {
+    print> "Testing global variables"
+    
+    // Test reading global
+    print> "Initial counter:"
+    print> counter
+    
+    // Test modifying global through function
+    let result := increment()
+    print> "After increment:"
+    print> counter
+    
+    // Test reading constant global
+    print> "Max value:"
+    print> max_value
+    
+    ret 0
+}

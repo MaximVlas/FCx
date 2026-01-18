@@ -1,0 +1,68 @@
+// Test: Algebraic simplification optimizations
+// These should be simplified to more efficient forms
+
+fn main() -> i64 {
+    let x := 42
+    
+    // Identity operations - should be simplified
+    let add_zero := x + 0           // Should simplify to x
+    let sub_zero := x - 0           // Should simplify to x
+    let mul_one := x * 1            // Should simplify to x
+    let div_one := x / 1            // Should simplify to x
+    let or_zero := x | 0            // Should simplify to x
+    let and_all := x & 0xFFFFFFFF   // Should simplify to x (for 32-bit)
+    let xor_zero := x ^ 0           // Should simplify to x
+    
+    // Annihilator operations - should be simplified to constants
+    let mul_zero := x * 0           // Should simplify to 0
+    let and_zero := x & 0           // Should simplify to 0
+    let sub_self := x - x           // Should simplify to 0
+    let xor_self := x ^ x           // Should simplify to 0
+    
+    // Idempotent operations - should be simplified
+    let or_self := x | x            // Should simplify to x
+    let and_self := x & x           // Should simplify to x
+    
+    // Strength reduction - should use shifts instead of mul/div
+    let mul_by_2 := x * 2           // Should become x << 1
+    let mul_by_4 := x * 4           // Should become x << 2
+    let mul_by_8 := x * 8           // Should become x << 3
+    let div_by_2 := x / 2           // Should become x >> 1
+    let div_by_4 := x / 4           // Should become x >> 2
+    let mod_by_8 := x /% 8           // Should become x & 7
+    
+    // Double negation - should be simplified
+    let double_neg := -(-x)         // Should simplify to x
+    
+    // Complement operations
+    let not_not := ~(~x)            // Should simplify to x
+    
+    // Print results to verify correctness
+    print>add_zero     // 42
+    print>sub_zero     // 42
+    print>mul_one      // 42
+    print>div_one      // 42
+    print>or_zero      // 42
+    print>and_all      // 42
+    print>xor_zero     // 42
+    
+    print>mul_zero     // 0
+    print>and_zero     // 0
+    print>sub_self     // 0
+    print>xor_self     // 0
+    
+    print>or_self      // 42
+    print>and_self     // 42
+    
+    print>mul_by_2     // 84
+    print>mul_by_4     // 168
+    print>mul_by_8     // 336
+    print>div_by_2     // 21
+    print>div_by_4     // 10 (integer division)
+    print>mod_by_8     // 2
+    
+    print>double_neg   // 42
+    print>not_not      // 42
+    
+    ret 0
+}

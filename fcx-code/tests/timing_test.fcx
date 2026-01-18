@@ -1,0 +1,65 @@
+// FCx Timing API Test
+// Demonstrates high-precision timing functions
+
+#include "io.h"
+#include "timing.h"
+
+// Test function to time
+fn fibonacci(n) -> i64 {
+    if n <= 1 {
+        ret n
+    }
+    ret fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+fn main() -> i64 {
+    println("=== FCx Timing Test ===")
+    
+    // Test 1: Simple tick/tock timing
+    println("\n1. Simple tick/tock timing:")
+    tick()
+    let fib30 := fibonacci(30)
+    let elapsed_ns := tock_ns()
+    print("   fibonacci(30) = ")
+    println(fib30)
+    print("   Time: ")
+    print_time(elapsed_ns)
+    println("")
+    
+    // Test 2: Timer slots
+    println("\n2. Timer slot API:")
+    timer_start(0)
+    let fib35 := fibonacci(35)
+    let timer_ns := timer_stop_ns(0)
+    print("   fibonacci(35) = ")
+    println(fib35)
+    print("   Time: ")
+    print_time(timer_ns)
+    println("")
+    
+    // Test 3: CPU cycles
+    println("\n3. CPU cycles measurement:")
+    tick()
+    let fib25 := fibonacci(25)
+    let cyc := tock_cycles()
+    print("   fibonacci(25) cycles: ")
+    println(cyc)
+    
+    // Test 4: Current time
+    println("\n4. Current timestamps:")
+    print("   time_ns: ")
+    println(time_ns())
+    print("   time_us: ")
+    println(time_us())
+    print("   time_ms: ")
+    println(time_ms())
+    
+    // Test 5: print_timing helper
+    println("\n5. print_timing helper:")
+    tick()
+    let fib20 := fibonacci(20)
+    print_timing("   fibonacci(20)", tock_ns())
+    
+    println("\n=== Test Complete ===")
+    ret 0
+}

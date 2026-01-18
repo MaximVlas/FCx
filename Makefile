@@ -3,6 +3,7 @@
 
 # Use clang with C23 for modern features including __int128 support
 CC = clang
+ZIG = zig
 
 # LLVM Configuration
 LLVM_CONFIG = llvm-config
@@ -34,9 +35,13 @@ OPTIMIZER_SRCS = $(SRCDIR)/optimizer/hmso.c $(SRCDIR)/optimizer/hmso_index.c $(S
 CODEGEN_SRCS = $(SRCDIR)/codegen/llvm_backend.c $(SRCDIR)/codegen/llvm_codegen.c $(SRCDIR)/codegen/inline_asm.c
 MODULE_SRCS = $(SRCDIR)/module/preprocessor.c
 TYPES_SRCS = $(SRCDIR)/types/pointer_types.c
-RUNTIME_SRCS = $(SRCDIR)/runtime/bootstrap.c $(SRCDIR)/runtime/fcx_memory.c $(SRCDIR)/runtime/fcx_syscall.c $(SRCDIR)/runtime/fcx_atomic.c $(SRCDIR)/runtime/fcx_hardware.c $(SRCDIR)/runtime/fcx_runtime.c $(SRCDIR)/runtime/fcx_error_runtime.c
+RUNTIME_SRCS = $(SRCDIR)/runtime/bootstrap.c $(SRCDIR)/runtime/fcx_memory.c $(SRCDIR)/runtime/fcx_syscall.c $(SRCDIR)/runtime/fcx_atomic.c $(SRCDIR)/runtime/fcx_hardware.c $(SRCDIR)/runtime/fcx_runtime.c $(SRCDIR)/runtime/fcx_error_runtime.c $(SRCDIR)/runtime/fcx_timing.c
 ERROR_SRCS = $(SRCDIR)/error/error_handler.c
 MAIN_SRCS = $(SRCDIR)/main.c
+
+# Zig sources (C import bridge)
+ZIG_C_IMPORT = $(SRCDIR)/module/c_import.zig
+ZIG_C_IMPORT_LIB = $(OBJDIR)/libfcx_c_import.a
 
 ALL_SRCS = $(LEXER_SRCS) $(PARSER_SRCS) $(SEMANTIC_SRCS) $(IR_SRCS) $(OPTIMIZER_SRCS) $(CODEGEN_SRCS) $(MODULE_SRCS) $(TYPES_SRCS) $(RUNTIME_SRCS) $(ERROR_SRCS) $(MAIN_SRCS)
 
@@ -79,9 +84,14 @@ $(BINDIR):
 	mkdir -p $(BINDIR)
 
 # Build target
-$(TARGET): $(OBJDIR) $(BINDIR) $(ALL_OBJS)
-	$(CC) $(ALL_OBJS) $(LDFLAGS) -o $(TARGET)
+$(TARGET): $(OBJDIR) $(BINDIR) $(ALL_OBJS) $(ZIG_C_IMPORT_LIB)
+	$(CC) $(ALL_OBJS) $(ZIG_C_IMPORT_LIB) $(LDFLAGS) -o $(TARGET)
 	@echo "FCx compiler built successfully: $(TARGET)"
+
+# Build Zig C import library
+$(ZIG_C_IMPORT_LIB): $(ZIG_C_IMPORT)
+	$(ZIG) build-lib -OReleaseFast -fPIC -femit-bin=$(ZIG_C_IMPORT_LIB) $(ZIG_C_IMPORT)
+	@echo "Built Zig C import library"
 
 # Compile source files
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
@@ -94,6 +104,7 @@ debug: $(TARGET)
 # Clean build artifacts
 clean:
 	rm -rf $(OBJDIR) $(BINDIR)
+	rm -f $(ZIG_C_IMPORT_LIB)
 	@echo "Cleaned build artifacts"
 
 # Install (copy to /usr/local/bin)

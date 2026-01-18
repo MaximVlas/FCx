@@ -1,0 +1,7 @@
+// Minimal global variable test
+let counter := 5
+
+fn main() -> i64 {
+    // Just read the global
+    ret counter
+}

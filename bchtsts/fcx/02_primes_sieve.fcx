@@ -13,11 +13,7 @@ fn is_prime(n) -> i64 {
     }
     let i := 3
     while i * i <= n {
-        let temp := n
-        while temp >= i {
-            temp := temp - i
-        }
-        if temp == 0 {
+        if (n /% i) == 0 {
             ret 0
         }
         i := i + 2

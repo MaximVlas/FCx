@@ -1,0 +1,15 @@
+// Strength reduction test
+fn main() -> i64 {
+    let x := 42
+    
+    // These should use shifts instead of mul/div
+    let mul_by_4 := x * 4     // Should become x << 2
+    let div_by_8 := x / 8     // Should become x >> 3
+    let mod_by_16 := x /% 16  // Should become x & 15
+    
+    print>mul_by_4
+    print>div_by_8
+    print>mod_by_16
+    
+    ret 0
+}

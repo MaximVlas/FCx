@@ -1,0 +1,21 @@
+// Fibonacci timing benchmark
+#include "timing.h"
+#include "io.h"
+
+fn fibonacci(n) -> i64 {
+    if n <= 1 {
+        ret n
+    }
+    ret fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+fn main() -> i64 {
+    tick()
+    let result := fibonacci(35)
+    let elapsed := tock_ms()
+    
+    printf("fib(35) = %d\n", result, 0, 0, 0, 0, 0, 0, 0)
+    printf("Time: %d ms\n", elapsed, 0, 0, 0, 0, 0, 0, 0)
+    
+    ret 0
+}

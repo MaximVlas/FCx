@@ -1,0 +1,58 @@
+// Test: Basic constant folding optimizations
+// These operations should be folded at compile time
+
+fn main() -> i64 {
+    // Basic arithmetic - should be folded to constants
+    let add_result := 10 + 5        // Should fold to 15
+    let sub_result := 20 - 8        // Should fold to 12
+    let mul_result := 6 * 7         // Should fold to 42
+    let div_result := 100 / 4       // Should fold to 25
+    let mod_result := 17 /% 5        // Should fold to 2
+    
+    // Bitwise operations - should be folded
+    let and_result := 0xFF & 0x0F   // Should fold to 15
+    let or_result := 0xF0 | 0x0F    // Should fold to 255
+    let xor_result := 0xFF ^ 0xAA   // Should fold to 85
+    let not_result := ~0x00         // Should fold to -1
+    
+    // Shift operations - should be folded
+    let lshift_result := 5 << 2     // Should fold to 20
+    let rshift_result := 80 >> 3    // Should fold to 10
+    
+    // Comparison operations - should be folded
+    let eq_result := 5 == 5         // Should fold to true (1)
+    let ne_result := 5 != 3         // Should fold to true (1)
+    let lt_result := 3 < 7          // Should fold to true (1)
+    let le_result := 5 <= 5         // Should fold to true (1)
+    let gt_result := 10 > 3         // Should fold to true (1)
+    let ge_result := 8 >= 8         // Should fold to true (1)
+    
+    // Unary operations - should be folded
+    let neg_result := -42           // Should fold to -42
+    
+    // Print results to verify correctness
+    print>add_result    // 15
+    print>sub_result    // 12
+    print>mul_result    // 42
+    print>div_result    // 25
+    print>mod_result    // 2
+    
+    print>and_result    // 15
+    print>or_result     // 255
+    print>xor_result    // 85
+    print>not_result    // -1
+    
+    print>lshift_result // 20
+    print>rshift_result // 10
+    
+    print>eq_result     // 1
+    print>ne_result     // 1
+    print>lt_result     // 1
+    print>le_result     // 1
+    print>gt_result     // 1
+    print>ge_result     // 1
+    
+    print>neg_result    // -42
+    
+    ret 0
+}

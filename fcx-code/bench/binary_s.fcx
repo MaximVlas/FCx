@@ -1,0 +1,25 @@
+// FCx binary search - compile to .o
+// Exported function for linking
+
+@export
+fn binary_search_fcx(target, size) -> i64 {
+    let low := 0
+    let high := size - 1
+    let steps := 0
+    
+    while low <= high {
+        let mid := low + (high - low) / 2
+        let arr_mid := mid  // Simulated: arr[mid] = mid
+        steps := steps + 1
+        
+        if arr_mid == target {
+            ret steps
+        }
+        if arr_mid < target {
+            low := mid + 1
+        } else {
+            high := mid - 1
+        }
+    }
+    ret steps
+}

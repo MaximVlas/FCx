@@ -1,0 +1,5 @@
+// Test local assignment
+fn main() -> i64 {
+    let x := 10
+    ret x
+}

@@ -3,6 +3,7 @@
 
 #include "../ir/fc_ir.h"
 #include "../ir/fcx_ir.h"
+#include "../module/c_import_zig.h"
 #include <llvm-c/Core.h>
 #include <llvm-c/Target.h>
 #include <llvm-c/TargetMachine.h>
@@ -75,6 +76,8 @@ struct LLVMBackend {
     LLVMTypeRef* type_cache;
     LLVMValueRef* global_strings;
     uint32_t global_string_count;
+    LLVMValueRef* global_vars;       // LLVM global variable references
+    uint32_t global_var_count;
     LLVMValueRef* external_funcs;
     uint32_t external_func_count;
     uint32_t instruction_count;
@@ -90,6 +93,8 @@ void llvm_backend_reset(LLVMBackend* backend);
 bool llvm_backend_init_target(LLVMBackend* backend);
 const char* llvm_backend_get_error(const LLVMBackend* backend);
 bool llvm_emit_module(LLVMBackend* backend, const FcIRModule* module);
+bool llvm_emit_module_with_imports(LLVMBackend* backend, const FcIRModule* module, 
+                                    CImportContext* c_ctx, CImportContext* cpp_ctx, bool verbose);
 bool llvm_emit_function(LLVMBackend* backend, const FcIRFunction* function);
 bool llvm_emit_block(LLVMBackend* backend, const FcIRBasicBlock* block);
 bool llvm_emit_instruction(LLVMBackend* backend, const FcIRInstruction* instr);
@@ -104,10 +109,16 @@ LLVMBackendConfig llvm_default_config(void);
 LLVMBackendConfig llvm_debug_config(void);
 LLVMBackendConfig llvm_release_config(void);
 LLVMBackendConfig llvm_size_config(void);
+LLVMBackendConfig llvm_config_for_level(int opt_level);
 
 bool llvm_link_executable(const char* object_path, const char* output_path);
 bool llvm_link_shared_library(const char* object_path, const char* output_path);
 bool llvm_compile_and_link(LLVMBackend* backend, const char* output_path);
 bool llvm_compile_shared_library(LLVMBackend* backend, const char* output_path);
+
+// C Import Integration - link C library LLVM IR into FCX module
+bool llvm_inject_c_imports(LLVMBackend* backend, CImportContext* c_ctx);
+bool llvm_inject_cpp_imports(LLVMBackend* backend, CImportContext* cpp_ctx);
+bool llvm_link_ir_text(LLVMBackend* backend, const char* ir_text, size_t ir_len);
 
 #endif

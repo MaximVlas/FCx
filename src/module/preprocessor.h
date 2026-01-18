@@ -277,4 +277,33 @@ char *preprocessor_resolve_include(Preprocessor *pp, const char *include_name,
  */
 char *preprocessor_read_file(const char *filename);
 
+// ============================================================================
+// C/C++ Import Support
+// ============================================================================
+
+/**
+ * Get the C import context (for code generation)
+ * @return C import context or NULL if no C imports
+ */
+struct CImportContext *preprocessor_get_c_import_context(void);
+
+/**
+ * Get the C++ import context (for code generation)
+ * @return C++ import context or NULL if no C++ imports
+ */
+struct CImportContext *preprocessor_get_cpp_import_context(void);
+
+/**
+ * Process all pending C/C++ imports
+ * Call this after preprocessing to parse C headers
+ * @return true on success
+ */
+bool preprocessor_process_c_imports(void);
+
+/**
+ * Cleanup C/C++ import contexts
+ * Call this when done with compilation
+ */
+void preprocessor_cleanup_c_imports(void);
+
 #endif // FCX_PREPROCESSOR_H

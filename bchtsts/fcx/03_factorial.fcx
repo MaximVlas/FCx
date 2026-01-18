@@ -16,11 +16,8 @@ fn main() -> i64 {
     let sum := 0
     let i := 0
     
-    // Use varying input to prevent constant folding
-    // Manual modulo: i % 12 = i - (i/12)*12
     while i < iterations {
-        let div := i / 12
-        let n := i - div * 12 + 1
+        let n := (i /% 12) + 1
         sum := sum + factorial(n)
         i := i + 1
     }

@@ -15,7 +15,6 @@ int main(void) {
     int64_t iterations = 10000000;
     int64_t sum = 0;
     
-    // Use varying input to prevent constant folding
     for (int64_t i = 0; i < iterations; i++) {
         sum += factorial((i % 12) + 1);
     }

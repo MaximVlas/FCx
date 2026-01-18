@@ -1,0 +1,34 @@
+// Test: Bigint constant folding optimizations
+// These operations on large integers should be folded at compile time
+
+fn main() -> i64 {
+    // 128-bit integer operations - should be folded
+    let big1: i128 := 0x123456789ABCDEF0123456789ABCDEF0
+    let big2: i128 := 0x0FEDCBA987654321FEDCBA9876543210
+    
+    // Basic bigint arithmetic - should be folded
+    let big_add := 0x1000000000000000 + 0x2000000000000000  // Should fold to 0x3000000000000000
+    let big_sub := 0x5000000000000000 - 0x1000000000000000  // Should fold to 0x4000000000000000
+    let big_mul := 0x100000000 * 0x100000000                // Should fold to 0x10000000000000000
+    
+    // Bigint bitwise operations - should be folded
+    let big_and := 0xFFFFFFFFFFFFFFFF & 0x0F0F0F0F0F0F0F0F  // Should fold
+    let big_or := 0xF0F0F0F0F0F0F0F0 | 0x0F0F0F0F0F0F0F0F   // Should fold to 0xFFFFFFFFFFFFFFFF
+    let big_xor := 0xAAAAAAAAAAAAAAAA ^ 0x5555555555555555  // Should fold to 0xFFFFFFFFFFFFFFFF
+    
+    // Bigint shift operations - should be folded
+    let big_lshift := 0x123456789ABCDEF0 << 4               // Should fold
+    let big_rshift := 0x123456789ABCDEF0 >> 4               // Should fold
+    
+    // Bigint comparison operations - should be folded
+    let big_eq := 0x123456789ABCDEF0 == 0x123456789ABCDEF0  // Should fold to true
+    let big_ne := 0x123456789ABCDEF0 != 0xFEDCBA9876543210  // Should fold to true
+    let big_lt := 0x1000000000000000 < 0x2000000000000000   // Should fold to true
+    
+    // Mixed size operations (should be promoted and folded)
+    let mixed_add := 0x100000000 + 42                       // Should fold
+    
+    // Print some results (note: printing bigints may need special handling)
+    // For now, just return success
+    ret 0
+}

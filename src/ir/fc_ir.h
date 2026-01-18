@@ -54,6 +54,7 @@ typedef enum {
     FCIR_SUB,
     FCIR_IMUL,
     FCIR_IDIV,
+    FCIR_IMOD,  // Signed modulo (remainder)
     FCIR_NEG,
     FCIR_INC,
     FCIR_DEC,
@@ -291,11 +292,25 @@ typedef struct {
     size_t length;
 } FcIRStringLiteral;
 
+// Global variable for data section
+typedef struct {
+    const char* name;          // Variable name
+    VRegType type;             // Variable type
+    int64_t init_value;        // Initial value
+    bool is_const;             // Is constant?
+    bool has_init;             // Has initializer?
+} FcIRGlobalVar;
+
 typedef struct {
     const char* name;
     FcIRFunction* functions;
     uint32_t function_count;
     uint32_t function_capacity;
+    
+    // Global variables for data section
+    FcIRGlobalVar* global_vars;
+    uint32_t global_var_count;
+    uint32_t global_var_capacity;
     
     // String literals for data section
     FcIRStringLiteral* string_literals;

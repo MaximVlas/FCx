@@ -1,0 +1,19 @@
+// Performance test to show optimization impact
+fn compute_intensive() -> i64 {
+    let result := 0
+    let i := 0
+    
+    while i < 1000000 {
+        // Operations that benefit from constant folding and strength reduction
+        let temp := (i * 4) + (100 / 4) - (i /% 8)
+        result := result + temp
+        i := i + 1
+    }
+    
+    ret result
+}
+
+fn main() -> i64 {
+    let start_result := compute_intensive()
+    ret start_result
+}

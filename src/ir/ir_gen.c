@@ -20,6 +20,8 @@ IRGenerator* ir_gen_create(const char* module_name) {
     
     gen->symbol_table.names = NULL;
     gen->symbol_table.vregs = NULL;
+    gen->symbol_table.is_global = NULL;
+    gen->symbol_table.global_index = NULL;
     gen->symbol_table.count = 0;
     gen->symbol_table.capacity = 0;
     
@@ -50,6 +52,8 @@ void ir_gen_destroy(IRGenerator* gen) {
     }
     free(gen->symbol_table.names);
     free(gen->symbol_table.vregs);
+    free(gen->symbol_table.is_global);
+    free(gen->symbol_table.global_index);
     
     // Free loop stack
     free(gen->loop_stack.break_targets);
@@ -66,24 +70,46 @@ void ir_gen_destroy(IRGenerator* gen) {
 // Symbol Table Management
 // ============================================================================
 
-void ir_gen_add_symbol(IRGenerator* gen, const char* name, VirtualReg vreg) {
-    if (!gen || !name) return;
-    
+static void ensure_symbol_table_capacity(IRGenerator* gen) {
     if (gen->symbol_table.count >= gen->symbol_table.capacity) {
         size_t new_capacity = gen->symbol_table.capacity == 0 ? 16 : gen->symbol_table.capacity * 2;
         
         char** new_names = (char**)realloc(gen->symbol_table.names, new_capacity * sizeof(char*));
         VirtualReg* new_vregs = (VirtualReg*)realloc(gen->symbol_table.vregs, new_capacity * sizeof(VirtualReg));
+        bool* new_is_global = (bool*)realloc(gen->symbol_table.is_global, new_capacity * sizeof(bool));
+        uint32_t* new_global_index = (uint32_t*)realloc(gen->symbol_table.global_index, new_capacity * sizeof(uint32_t));
         
-        if (!new_names || !new_vregs) return;
+        if (!new_names || !new_vregs || !new_is_global || !new_global_index) return;
         
         gen->symbol_table.names = new_names;
         gen->symbol_table.vregs = new_vregs;
+        gen->symbol_table.is_global = new_is_global;
+        gen->symbol_table.global_index = new_global_index;
         gen->symbol_table.capacity = new_capacity;
     }
+}
+
+void ir_gen_add_symbol(IRGenerator* gen, const char* name, VirtualReg vreg) {
+    if (!gen || !name) return;
+    
+    ensure_symbol_table_capacity(gen);
     
     gen->symbol_table.names[gen->symbol_table.count] = strdup(name);
     gen->symbol_table.vregs[gen->symbol_table.count] = vreg;
+    gen->symbol_table.is_global[gen->symbol_table.count] = false;
+    gen->symbol_table.global_index[gen->symbol_table.count] = 0;
+    gen->symbol_table.count++;
+}
+
+void ir_gen_add_global_symbol(IRGenerator* gen, const char* name, uint32_t global_index) {
+    if (!gen || !name) return;
+    
+    ensure_symbol_table_capacity(gen);
+    
+    gen->symbol_table.names[gen->symbol_table.count] = strdup(name);
+    gen->symbol_table.vregs[gen->symbol_table.count] = (VirtualReg){0};  // Not used for globals
+    gen->symbol_table.is_global[gen->symbol_table.count] = true;
+    gen->symbol_table.global_index[gen->symbol_table.count] = global_index;
     gen->symbol_table.count++;
 }
 
@@ -101,6 +127,24 @@ VirtualReg ir_gen_lookup_symbol(IRGenerator* gen, const char* name, bool* found)
     }
     
     return invalid;
+}
+
+bool ir_gen_is_global_symbol(IRGenerator* gen, const char* name, uint32_t* global_index) {
+    if (!gen || !name) return false;
+    
+    for (size_t i = gen->symbol_table.count; i > 0; i--) {
+        if (strcmp(gen->symbol_table.names[i - 1], name) == 0) {
+            if (gen->symbol_table.is_global[i - 1]) {
+                if (global_index) {
+                    *global_index = gen->symbol_table.global_index[i - 1];
+                }
+                return true;
+            }
+            return false;
+        }
+    }
+    
+    return false;
 }
 
 // Update an existing symbol's vreg value
@@ -964,11 +1008,42 @@ VirtualReg ir_gen_generate_expression(IRGenerator* gen, Expr* expr) {
         }
         
         case EXPR_IDENTIFIER: {
+            const char* name = expr->data.identifier;
+            
+            // Check if this is a global variable
+            uint32_t global_index;
+            if (ir_gen_is_global_symbol(gen, name, &global_index)) {
+                // Global variable - generate a load from the global
+                VirtualReg result = ir_gen_alloc_temp(gen, VREG_TYPE_I64);
+                
+                // Use FCXIR_LOAD_GLOBAL opcode
+                FcxIRInstruction instr = {0};
+                instr.opcode = FCXIR_LOAD_GLOBAL;
+                instr.operand_count = 1;
+                instr.u.global_op.vreg = result;
+                instr.u.global_op.global_index = global_index;
+                
+                // Add instruction to current block
+                if (gen->current_block->instruction_count >= gen->current_block->instruction_capacity) {
+                    uint32_t new_capacity = gen->current_block->instruction_capacity == 0 ? 16 : gen->current_block->instruction_capacity * 2;
+                    FcxIRInstruction* new_instructions = (FcxIRInstruction*)realloc(
+                        gen->current_block->instructions, new_capacity * sizeof(FcxIRInstruction));
+                    if (new_instructions) {
+                        gen->current_block->instructions = new_instructions;
+                        gen->current_block->instruction_capacity = new_capacity;
+                    }
+                }
+                gen->current_block->instructions[gen->current_block->instruction_count++] = instr;
+                
+                return result;
+            }
+            
+            // Local variable - look up in symbol table
             bool found;
-            VirtualReg vreg = ir_gen_lookup_symbol(gen, expr->data.identifier, &found);
+            VirtualReg vreg = ir_gen_lookup_symbol(gen, name, &found);
             if (!found) {
                 char error[256];
-                snprintf(error, sizeof(error), "Undefined variable: %s", expr->data.identifier);
+                snprintf(error, sizeof(error), "Undefined variable: %s", name);
                 ir_gen_set_error(gen, error);
                 return (VirtualReg){0};
             }
@@ -1230,6 +1305,33 @@ VirtualReg ir_gen_generate_expression(IRGenerator* gen, Expr* expr) {
             
             if (expr->data.assignment.target->type == EXPR_IDENTIFIER) {
                 const char* name = expr->data.assignment.target->data.identifier;
+                
+                // Check if this is a global variable
+                uint32_t global_index;
+                if (ir_gen_is_global_symbol(gen, name, &global_index)) {
+                    // Global variable - generate a store to the global
+                    FcxIRInstruction instr = {0};
+                    instr.opcode = FCXIR_STORE_GLOBAL;
+                    instr.operand_count = 1;
+                    instr.u.global_op.vreg = value;
+                    instr.u.global_op.global_index = global_index;
+                    
+                    // Add instruction to current block
+                    if (gen->current_block->instruction_count >= gen->current_block->instruction_capacity) {
+                        uint32_t new_capacity = gen->current_block->instruction_capacity == 0 ? 16 : gen->current_block->instruction_capacity * 2;
+                        FcxIRInstruction* new_instructions = (FcxIRInstruction*)realloc(
+                            gen->current_block->instructions, new_capacity * sizeof(FcxIRInstruction));
+                        if (new_instructions) {
+                            gen->current_block->instructions = new_instructions;
+                            gen->current_block->instruction_capacity = new_capacity;
+                        }
+                    }
+                    gen->current_block->instructions[gen->current_block->instruction_count++] = instr;
+                    
+                    return value;
+                }
+                
+                // Local variable
                 bool found;
                 VirtualReg existing = ir_gen_lookup_symbol(gen, name, &found);
                 
@@ -1441,6 +1543,23 @@ VirtualReg ir_gen_generate_expression(IRGenerator* gen, Expr* expr) {
                                     (const char**)expr->data.inline_asm.clobbers,
                                     (uint8_t)expr->data.inline_asm.clobber_count,
                                     expr->data.inline_asm.is_volatile);
+            
+            // Store outputs back to their target variables
+            for (size_t i = 0; i < expr->data.inline_asm.output_count; i++) {
+                if (expr->data.inline_asm.output_exprs && expr->data.inline_asm.output_exprs[i]) {
+                    Expr* out_expr = expr->data.inline_asm.output_exprs[i];
+                    if (out_expr->type == EXPR_IDENTIFIER) {
+                        // Look up the variable and copy the output to it
+                        const char* var_name = out_expr->data.identifier;
+                        bool found;
+                        VirtualReg var_vreg = ir_gen_lookup_symbol(gen, var_name, &found);
+                        if (found && var_vreg.id != 0) {
+                            // Use MOV to copy the asm output to the variable
+                            fcx_ir_build_mov(gen->current_block, var_vreg, outputs[i]);
+                        }
+                    }
+                }
+            }
             
             return result;
         }
@@ -1986,6 +2105,47 @@ bool ir_gen_generate_function(IRGenerator* gen, Stmt* func_stmt) {
 bool ir_gen_generate_module(IRGenerator* gen, Stmt** statements, size_t stmt_count) {
     if (!gen || !statements) return false;
     
+    // First pass: collect global variables
+    for (size_t i = 0; i < stmt_count; i++) {
+        Stmt* stmt = statements[i];
+        
+        if (stmt->type == STMT_LET) {
+            // Global variable declaration
+            const char* name = stmt->data.let.name;
+            
+            // Add global variable to module
+            if (gen->module) {
+                if (gen->module->global_count >= gen->module->global_capacity) {
+                    size_t new_cap = gen->module->global_capacity == 0 ? 16 : gen->module->global_capacity * 2;
+                    gen->module->globals = realloc(gen->module->globals, new_cap * sizeof(FcxIRGlobal));
+                    gen->module->global_capacity = new_cap;
+                }
+                
+                uint32_t global_index = gen->module->global_count;
+                FcxIRGlobal* global = &gen->module->globals[gen->module->global_count++];
+                global->name = strdup(name);
+                global->vreg = (VirtualReg){0};  // Not used - globals are accessed by name
+                global->type = VREG_TYPE_I64;
+                global->is_const = stmt->data.let.is_const;
+                
+                // Set initial value
+                if (stmt->data.let.initializer && 
+                    stmt->data.let.initializer->type == EXPR_LITERAL &&
+                    stmt->data.let.initializer->data.literal.type == LIT_INTEGER) {
+                    global->init_value = stmt->data.let.initializer->data.literal.value.integer;
+                    global->has_init = true;
+                } else {
+                    global->init_value = 0;
+                    global->has_init = false;
+                }
+                
+                // Add to symbol table as a global
+                ir_gen_add_global_symbol(gen, name, global_index);
+            }
+        }
+    }
+    
+    // Second pass: generate functions
     for (size_t i = 0; i < stmt_count; i++) {
         Stmt* stmt = statements[i];
         
@@ -1993,9 +2153,6 @@ bool ir_gen_generate_module(IRGenerator* gen, Stmt** statements, size_t stmt_cou
             if (!ir_gen_generate_function(gen, stmt)) {
                 return false;
             }
-        } else {
-            // Top-level statement (not in a function)
-            // For now, skip or handle as needed
         }
     }
     

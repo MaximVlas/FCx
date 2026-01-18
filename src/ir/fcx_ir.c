@@ -17,6 +17,11 @@ FcxIRModule* fcx_ir_module_create(const char* name) {
     module->function_count = 0;
     module->function_capacity = 0;
     
+    // Initialize global variables storage
+    module->globals = NULL;
+    module->global_count = 0;
+    module->global_capacity = 0;
+    
     // Initialize string literal storage
     module->string_literals = NULL;
     module->string_count = 0;
@@ -32,6 +37,12 @@ void fcx_ir_module_destroy(FcxIRModule* module) {
     for (uint32_t i = 0; i < module->function_count; i++) {
         fcx_ir_function_destroy(&module->functions[i]);
     }
+    
+    // Free global variables
+    for (uint32_t i = 0; i < module->global_count; i++) {
+        free((void*)module->globals[i].name);
+    }
+    free(module->globals);
     
     // Free string literals
     for (uint32_t i = 0; i < module->string_count; i++) {
@@ -700,6 +711,8 @@ static const char* opcode_to_string(FcxIROpcode opcode) {
         case FCXIR_SIMD_MUL: return "simd.mul";
         case FCXIR_SIMD_DIV: return "simd.div";
         case FCXIR_INLINE_ASM: return "inline_asm";
+        case FCXIR_LOAD_GLOBAL: return "load.global";
+        case FCXIR_STORE_GLOBAL: return "store.global";
         default: return "unknown";
     }
 }
@@ -768,6 +781,18 @@ void fcx_ir_print_instruction(const FcxIRInstruction* instr) {
                    instr->u.load_store.dest.id,
                    instr->u.load_store.offset,
                    instr->u.load_store.src.id);
+            break;
+        
+        case FCXIR_LOAD_GLOBAL:
+            printf("%%v%u = @global[%u]",
+                   instr->u.global_op.vreg.id,
+                   instr->u.global_op.global_index);
+            break;
+            
+        case FCXIR_STORE_GLOBAL:
+            printf("@global[%u] = %%v%u",
+                   instr->u.global_op.global_index,
+                   instr->u.global_op.vreg.id);
             break;
             
         case FCXIR_ADD:

@@ -14,6 +14,8 @@ typedef struct {
     struct {
         char** names;
         VirtualReg* vregs;
+        bool* is_global;        // Track if symbol is a global variable
+        uint32_t* global_index; // Index into module->globals for global vars
         size_t count;
         size_t capacity;
     } symbol_table;
@@ -55,7 +57,9 @@ VirtualReg ir_gen_desugar_memory_op(IRGenerator* gen, Expr* expr);
 
 // Symbol table management
 void ir_gen_add_symbol(IRGenerator* gen, const char* name, VirtualReg vreg);
+void ir_gen_add_global_symbol(IRGenerator* gen, const char* name, uint32_t global_index);
 VirtualReg ir_gen_lookup_symbol(IRGenerator* gen, const char* name, bool* found);
+bool ir_gen_is_global_symbol(IRGenerator* gen, const char* name, uint32_t* global_index);
 
 // Helper functions
 uint32_t ir_gen_alloc_label(IRGenerator* gen);

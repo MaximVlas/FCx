@@ -59,6 +59,8 @@ typedef enum {
     FCXIR_LOAD_VOLATILE,
     FCXIR_STORE_VOLATILE,
     FCXIR_MOV,  // Register-to-register move (not memory)
+    FCXIR_LOAD_GLOBAL,   // Load from global variable
+    FCXIR_STORE_GLOBAL,  // Store to global variable
     
     // Arithmetic operations
     FCXIR_ADD,
@@ -201,6 +203,12 @@ typedef struct {
             VirtualReg src;
             int32_t offset;
         } load_store;
+        
+        // Global variable operations
+        struct {
+            VirtualReg vreg;       // Destination (load) or source (store)
+            uint32_t global_index; // Index into module's globals array
+        } global_op;
         
         // Binary operations (arithmetic, bitwise, comparison)
         struct {
@@ -389,6 +397,19 @@ typedef struct {
 } FcxStringLiteral;
 
 // ============================================================================
+// Global Variable Structure
+// ============================================================================
+
+typedef struct {
+    const char* name;      // Variable name
+    VirtualReg vreg;       // Associated virtual register
+    VRegType type;         // Variable type
+    bool is_const;         // Is this a constant?
+    bool has_init;         // Has initializer?
+    int64_t init_value;    // Initial value (for simple integer constants)
+} FcxIRGlobal;
+
+// ============================================================================
 // Module Structure (Collection of Functions)
 // ============================================================================
 
@@ -397,6 +418,11 @@ typedef struct {
     FcxIRFunction* functions;
     uint32_t function_count;
     uint32_t function_capacity;
+    
+    // Global variables
+    FcxIRGlobal* globals;
+    uint32_t global_count;
+    uint32_t global_capacity;
     
     // String literals storage
     FcxStringLiteral* string_literals;

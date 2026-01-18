@@ -1,0 +1,6 @@
+// Simple global variable test
+let x := 42
+
+fn main() -> i64 {
+    ret x
+}

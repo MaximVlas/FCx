@@ -292,4 +292,52 @@ void _fcx_println_int(int64_t value);
 typedef void (*BenchmarkFunc)(void);
 void fcx_benchmark(const char* name, BenchmarkFunc func, int iterations);
 
+// ============================================================================
+// High-Precision Timing (fcx_timing.c)
+// ============================================================================
+
+// Get current time in various units (monotonic clock)
+int64_t fcx_time_ns(void);   // Nanoseconds
+int64_t fcx_time_us(void);   // Microseconds
+int64_t fcx_time_ms(void);   // Milliseconds
+uint64_t fcx_cycles(void);   // CPU cycles (rdtscp)
+
+// Timer management (up to 16 concurrent timers)
+int64_t fcx_timer_start(void);                    // Start timer, returns ID
+int64_t fcx_timer_stop_ns(int64_t timer_id);      // Stop and get nanoseconds
+int64_t fcx_timer_stop_us(int64_t timer_id);      // Stop and get microseconds
+int64_t fcx_timer_stop_ms(int64_t timer_id);      // Stop and get milliseconds
+int64_t fcx_timer_stop_cycles(int64_t timer_id);  // Stop and get CPU cycles
+int64_t fcx_timer_elapsed_ns(int64_t timer_id);   // Peek elapsed (no stop)
+void fcx_timer_reset(int64_t timer_id);           // Reset timer
+
+// Simple tick/tock timing (single global timer per thread)
+void fcx_tick(void);          // Start timing
+int64_t fcx_tock_ns(void);    // Get elapsed nanoseconds
+int64_t fcx_tock_us(void);    // Get elapsed microseconds
+int64_t fcx_tock_ms(void);    // Get elapsed milliseconds
+int64_t fcx_tock_cycles(void); // Get elapsed CPU cycles
+
+// Print timing with auto-formatting
+void fcx_print_timing(const char* label, int64_t ns);
+
+// FCx runtime exports
+int64_t _fcx_time_ns(void);
+int64_t _fcx_time_us(void);
+int64_t _fcx_time_ms(void);
+int64_t _fcx_cycles(void);
+int64_t _fcx_timer_start(void);
+int64_t _fcx_timer_stop_ns(int64_t id);
+int64_t _fcx_timer_stop_us(int64_t id);
+int64_t _fcx_timer_stop_ms(int64_t id);
+int64_t _fcx_timer_stop_cycles(int64_t id);
+int64_t _fcx_timer_elapsed_ns(int64_t id);
+void _fcx_timer_reset(int64_t id);
+void _fcx_tick(void);
+int64_t _fcx_tock_ns(void);
+int64_t _fcx_tock_us(void);
+int64_t _fcx_tock_ms(void);
+int64_t _fcx_tock_cycles(void);
+void _fcx_print_timing(const char* label, int64_t ns);
+
 #endif // FCX_RUNTIME_H

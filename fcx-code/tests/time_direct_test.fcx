@@ -1,0 +1,29 @@
+// Direct test of time_ns without global variables
+
+fn time_ns() -> i64 {
+    let result := 0
+    
+    asm% {
+        subq $16, %rsp
+        movq $228, %rax
+        movq $1, %rdi
+        movq %rsp, %rsi
+        syscall
+        movq (%rsp), %rax
+        imulq $1000000000, %rax
+        addq 8(%rsp), %rax
+        movq %rax, ${result}
+        addq $16, %rsp
+    }
+    
+    ret result
+}
+
+fn main() -> i64 {
+    let t := time_ns()
+    // Return something based on time (should be non-zero)
+    if t > 0 {
+        ret 1
+    }
+    ret 0
+}
